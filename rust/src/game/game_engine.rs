@@ -635,14 +635,36 @@ impl GameEngine {
             // 检查是否听牌
             if player.is_ready {
                 // 计算听牌玩家的最高可能番数
-                // 这里简化处理，使用基础番数
-                let mut checker = WinChecker::new();
-                let test_result = checker.check_win(&player.hand);
-                if test_result.is_win {
-                    let base_fans = BaseFansCalculator::base_fans(test_result.win_type);
-                    let roots = RootCounter::count_roots(&player.hand, &player.melds);
-                    if let Some(total) = Settlement::new(base_fans, roots, 0).total_fans() {
-                        ready_players_max_fans = ready_players_max_fans.max(total);
+                // 遍历所有可以听的牌，计算每种可能的胡牌番数，选择最高番数
+                let ready_tiles = player.get_ready_tiles();
+                
+                if !ready_tiles.is_empty() {
+                    let mut max_fan_for_player = 0u32;
+                    let mut checker = WinChecker::new();
+                    
+                    // 遍历所有可以听的牌，计算每种可能的胡牌番数
+                    for &ready_tile in &ready_tiles {
+                        // 创建测试手牌（添加这张牌）
+                        let mut test_hand = player.hand.clone();
+                        test_hand.add_tile(ready_tile);
+                        
+                        // 检查是否能胡牌
+                        let melds_count = player.melds.len() as u8;
+                        let win_result = checker.check_win_with_melds(&test_hand, melds_count);
+                        
+                        if win_result.is_win {
+                            // 计算该胡牌类型的番数
+                            let base_fans = BaseFansCalculator::base_fans(win_result.win_type);
+                            let roots = RootCounter::count_roots(&test_hand, &player.melds);
+                            if let Some(total) = Settlement::new(base_fans, roots, 0).total_fans() {
+                                max_fan_for_player = max_fan_for_player.max(total);
+                            }
+                        }
+                    }
+                    
+                    // 更新听牌玩家的最高番数
+                    if max_fan_for_player > 0 {
+                        ready_players_max_fans = ready_players_max_fans.max(max_fan_for_player);
                         ready_players.push(player.id);
                     }
                 }
