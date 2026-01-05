@@ -146,15 +146,35 @@ impl WinChecker {
         } else if let Some(result) = self.check_special_win(hand) {
             // 检查特殊牌型（在对基本胡牌型之前，因为特殊牌型更具体）
             result
-        } else if let Some(result) = self.check_normal_win(hand) {
-            // 检查基本胡牌型（1个对子 + 4个顺子/刻子）
-            result
         } else {
-            WinResult {
-                is_win: false,
-                win_type: WinType::Normal,
-                pair: None,
-                groups: SmallVec::new(),
+            // 使用查表法快速判断基本胡牌型（O(1) 查询）
+            // 查表法可以快速排除不能胡的情况，避免递归计算
+            use crate::tile::win_lookup::get_lookup_table;
+            let lookup_table = get_lookup_table();
+            let is_win_by_lookup = lookup_table.is_win(hand);
+            
+            if is_win_by_lookup {
+                // 查表法确认可以胡，使用递归算法获取详细信息（对子、组合等）
+                if let Some(result) = self.check_normal_win(hand) {
+                    result
+                } else {
+                    // 查表法说可以胡，但递归算法找不到组合，这不应该发生
+                    // 可能是查表法有误，或者需要更新
+                    WinResult {
+                        is_win: false,
+                        win_type: WinType::Normal,
+                        pair: None,
+                        groups: SmallVec::new(),
+                    }
+                }
+            } else {
+                // 查表法确认不能胡，直接返回（避免递归计算，性能优化）
+                WinResult {
+                    is_win: false,
+                    win_type: WinType::Normal,
+                    pair: None,
+                    groups: SmallVec::new(),
+                }
             }
         };
 
