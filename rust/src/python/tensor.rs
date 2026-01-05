@@ -18,11 +18,17 @@ use crate::python::action_mask::PyActionMask;
 /// - Plane 11: 场上剩余牌堆计数
 /// - Plane 12: 定缺掩码
 /// 
+/// Oracle 特征平面（仅训练时使用）：
+/// - Plane 13-24: 对手暗牌（手牌）- 仅在 use_oracle=true 时填充
+/// - Plane 46-55: 牌堆余牌分布 - 仅在 use_oracle=true 时填充
+/// 
 /// # 参数
 /// 
 /// - `state`: 游戏状态
 /// - `player_id`: 当前玩家视角（0-3）
-    /// - `remaining_tiles`: 剩余牌数（可选，用于 Plane 11，默认 0）
+/// - `remaining_tiles`: 剩余牌数（可选，用于 Plane 11，默认 0）
+/// - `use_oracle`: 是否使用 Oracle 特征（上帝视角，仅训练时使用，默认 false）
+/// - `wall_tile_distribution`: 牌堆余牌分布（可选，108 个浮点数，每张牌的剩余数量 0-4）
 /// - `py`: Python 解释器
 /// 
 /// # 返回
@@ -33,6 +39,8 @@ pub fn state_to_tensor(
     state: &PyGameState,
     player_id: u8,
     remaining_tiles: Option<usize>,
+    use_oracle: Option<bool>,
+    wall_tile_distribution: Option<Vec<f32>>,
     py: Python,
 ) -> PyResult<Py<PyArray3<f32>>> {
     if player_id >= 4 {
@@ -123,27 +131,38 @@ pub fn state_to_tensor(
         }
         
         // ========== 扩展特征平面（13-63）==========
-        // 保留原有逻辑，但从 Plane 13 开始
         
+        let use_oracle = use_oracle.unwrap_or(false);
         let mut plane_idx = 13;
         
-        // 平面 13-16: 其他三个玩家的手牌（每个玩家 4 层）
-        for other_player_id in 0..4 {
-            if other_player_id == player_id {
-                continue;
-            }
-            for count in 1..=4 {
-                let player = &game_state.players[other_player_id as usize];
-                for (tile, &tile_count) in player.hand.tiles_map() {
-                    if tile_count == count {
-                        let (suit_idx, rank_idx) = tile_to_indices(tile);
-                        if plane_idx < 64 {
-                            data[[plane_idx, suit_idx, rank_idx]] = 1.0;
+        // 平面 13-24: 其他三个玩家的手牌（每个玩家 4 层）
+        // 注意：这是 Oracle 特征，仅在训练时使用（use_oracle=true）
+        if use_oracle {
+            for other_player_id in 0..4 {
+                if other_player_id == player_id {
+                    continue;
+                }
+                for count in 1..=4 {
+                    let player = &game_state.players[other_player_id as usize];
+                    for (tile, &tile_count) in player.hand.tiles_map() {
+                        if tile_count == count {
+                            let (suit_idx, rank_idx) = tile_to_indices(tile);
+                            if plane_idx < 25 {
+                                data[[plane_idx, suit_idx, rank_idx]] = 1.0;
+                            }
                         }
                     }
+                    plane_idx += 1;
                 }
-                plane_idx += 1;
             }
+        }
+        // 如果不在 Oracle 模式，Plane 13-24 保持为 0（不显示对手暗牌）
+        
+        // 确保 plane_idx 正确设置
+        if !use_oracle {
+            plane_idx = 25;  // 跳过对手手牌平面
+        } else {
+            plane_idx = 25;  // 对手手牌平面已填充
         }
         
         // 平面 25-28: 已碰/杠的牌（4 个玩家）
@@ -234,7 +253,55 @@ pub fn state_to_tensor(
             }
         }
         
-        // 平面 46-63: 保留用于未来扩展
+        // 平面 46-55: Oracle 特征 - 牌堆余牌分布（仅训练时使用）
+        // 显示每张牌在牌堆中剩余的数量（0-4）
+        if use_oracle {
+            if let Some(wall_dist) = wall_tile_distribution {
+                // wall_dist 应该是 108 个浮点数，对应 108 种牌
+                // 每个值表示该牌在牌堆中剩余的数量（0-4）
+                if wall_dist.len() == 108 {
+                    let mut dist_idx = 0;
+                    for suit in 0..3 {
+                        for rank in 0..9 {
+                            let count = wall_dist[dist_idx];
+                            // 归一化到 [0, 1] 范围（除以 4）
+                            let normalized = (count / 4.0).min(1.0);
+                            
+                            // 使用 Plane 46-50 记录牌堆余牌分布
+                            // Plane 46: 0 张剩余
+                            // Plane 47: 1 张剩余
+                            // Plane 48: 2 张剩余
+                            // Plane 49: 3 张剩余
+                            // Plane 50: 4 张剩余
+                            let plane_base = 46;
+                            let count_int = count as u32;
+                            
+                            if count_int == 0 && plane_base < 64 {
+                                data[[plane_base, suit, rank]] = 1.0;
+                            } else if count_int == 1 && plane_base + 1 < 64 {
+                                data[[plane_base + 1, suit, rank]] = 1.0;
+                            } else if count_int == 2 && plane_base + 2 < 64 {
+                                data[[plane_base + 2, suit, rank]] = 1.0;
+                            } else if count_int == 3 && plane_base + 3 < 64 {
+                                data[[plane_base + 3, suit, rank]] = 1.0;
+                            } else if count_int >= 4 && plane_base + 4 < 64 {
+                                data[[plane_base + 4, suit, rank]] = 1.0;
+                            }
+                            
+                            // 同时记录归一化的数量值（用于更精确的信息）
+                            if plane_base + 5 < 64 {
+                                data[[plane_base + 5, suit, rank]] = normalized;
+                            }
+                            
+                            dist_idx += 1;
+                        }
+                    }
+                }
+            }
+        }
+        // 如果不在 Oracle 模式，Plane 46-55 保持为 0（不显示牌堆余牌分布）
+        
+        // 平面 56-63: 保留用于未来扩展
     }
     
     Ok(array.into())

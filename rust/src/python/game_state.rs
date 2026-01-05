@@ -132,6 +132,8 @@ impl PyGameState {
     /// 
     /// - `player_id`: 当前玩家视角（0-3）
     /// - `remaining_tiles`: 剩余牌数（可选，默认 0）
+    /// - `use_oracle`: 是否使用 Oracle 特征（上帝视角，仅训练时使用，默认 false）
+    /// - `wall_tile_distribution`: 牌堆余牌分布（可选，108 个浮点数，每张牌的剩余数量 0-4）
     /// - `py`: Python 解释器
     /// 
     /// # 返回
@@ -141,7 +143,22 @@ impl PyGameState {
     /// 2. 牌池可见性特征（108 个浮点数，每张牌的出现次数 0-4）
     /// 
     /// 总计：2304 + 108 = 2412 个浮点数
-    fn to_tensor(&self, player_id: u8, remaining_tiles: Option<usize>, py: Python) -> PyResult<Vec<f32>> {
+    /// 
+    /// # Oracle 特征
+    /// 
+    /// 当 `use_oracle=true` 时，特征编码会包含：
+    /// - 对手的暗牌（手牌）- Plane 13-24
+    /// - 牌堆余牌分布 - Plane 46-55
+    /// 
+    /// 这些特征仅在训练时使用，推理时应该设置为 `false`。
+    fn to_tensor(
+        &self,
+        player_id: u8,
+        remaining_tiles: Option<usize>,
+        use_oracle: Option<bool>,
+        wall_tile_distribution: Option<Vec<f32>>,
+        py: Python,
+    ) -> PyResult<Vec<f32>> {
         use crate::python::tensor::state_to_tensor;
         
         if player_id >= 4 {
@@ -151,7 +168,7 @@ impl PyGameState {
         }
         
         // 1. 获取 4D tensor
-        let tensor_4d = state_to_tensor(self, player_id, remaining_tiles, py)?;
+        let tensor_4d = state_to_tensor(self, player_id, remaining_tiles, use_oracle, wall_tile_distribution, py)?;
         
         // 2. 扁平化 4D tensor (64 × 4 × 9 = 2304)
         let mut result = Vec::with_capacity(2412);

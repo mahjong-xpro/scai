@@ -378,26 +378,51 @@
 
 ### 2.1 特征编码设计
 
-- [ ] **基础层**：
-  - [ ] 手牌（4 层）
-  - [ ] 弃牌
-  - [ ] 副露
-- [ ] **全局层**：
-  - [ ] 剩余牌数
-  - [ ] 当前局势（谁已胡、谁离场）
-  - [ ] 各家定缺色
+- [x] **基础层**：
+  - [x] 手牌（4 层）- Plane 0-3，One-hot 编码
+  - [x] 弃牌 - Plane 4-10，三个对手的弃牌 + 最近弃牌
+  - [x] 副露 - Plane 25-28，已碰/杠的牌（4 个玩家）
+- [x] **全局层**：
+  - [x] 剩余牌数 - Plane 11，归一化后的剩余牌数
+  - [x] 当前局势（谁已胡、谁离场） - Plane 29-32，玩家状态
+  - [x] 各家定缺色 - Plane 12，定缺掩码
+
+**实现位置**：`rust/src/python/tensor.rs` - `state_to_tensor()` 函数
+**文档**：`rust/FEATURE_ENCODING.md`
 
 ### 2.2 模型架构搭建
 
-- [ ] 实现 20+ 层的 ResNet 或轻量级 Transformer 骨干网
-- [ ] 设计 Dual-head 输出：
-  - [ ] Policy（动作概率）
-  - [ ] Value（期望收益分数）
+- [x] 实现 20+ 层的 ResNet 或轻量级 Transformer 骨干网
+  - [x] ResNetBackbone：20 个残差块，逐步提取深层特征
+  - [x] 支持可配置的层数和通道数
+- [x] 设计 Dual-head 输出：
+  - [x] Policy（动作概率）- PolicyHead，输出 434 维动作概率分布
+  - [x] Value（期望收益分数）- ValueHead，输出期望收益分数
+- [x] Dual-ResNet 完整模型：整合骨干网和双头输出
+
+**实现位置**：`python/scai/models/`
+- `backbone.py` - ResNet 骨干网络（20+ 层）
+- `policy_head.py` - 策略头（动作概率）
+- `value_head.py` - 价值头（期望收益分数）
+- `dual_resnet.py` - 完整 Dual-ResNet 模型
+
+**文档**：`python/README.md`
 
 ### 2.3 Oracle 特征设计
 
-- [ ] 为"上帝视角"准备特有通道（对手暗牌、牌堆余牌）
-- [ ] 仅限训练阶段使用
+- [x] 为"上帝视角"准备特有通道（对手暗牌、牌堆余牌）
+  - [x] 对手暗牌 - Plane 13-24，显示对手的手牌（仅 Oracle 模式）
+  - [x] 牌堆余牌分布 - Plane 46-55，显示每张牌在牌堆中剩余的数量（仅 Oracle 模式）
+- [x] 仅限训练阶段使用
+  - [x] `use_oracle` 参数控制是否启用 Oracle 特征
+  - [x] 训练时 `use_oracle=true`，推理时 `use_oracle=false`
+
+**实现位置**：`rust/src/python/tensor.rs` - `state_to_tensor()` 函数
+**文档**：`rust/ORACLE_FEATURES.md`
+
+**Oracle 特征平面**：
+- Plane 13-24: 对手暗牌（手牌）- 仅在 `use_oracle=true` 时填充
+- Plane 46-55: 牌堆余牌分布 - 仅在 `use_oracle=true` 时填充
 
 ---
 
@@ -407,27 +432,59 @@
 
 ### 3.1 分布式框架配置
 
-- [ ] 配置 Ray 或分布式并行环境
-- [ ] 支持数百个 Rust 实例同时生成轨迹（Trajectories）
+- [x] 配置 Ray 或分布式并行环境
+  - [x] SelfPlayWorker：Ray worker 实现
+  - [x] 支持并行创建多个 Worker
+- [x] 支持数百个 Rust 实例同时生成轨迹（Trajectories）
+  - [x] `create_workers()` 函数创建多个 Worker
+  - [x] `collect_trajectories_parallel()` 并行收集轨迹
+
+**实现位置**：`python/scai/selfplay/worker.py`
 
 ### 3.2 PPO 算法核心
 
-- [ ] 实现经验回放池
-- [ ] 优势函数（Advantage）计算
-- [ ] 策略裁剪（Clipping）
+- [x] 实现经验回放池
+  - [x] ReplayBuffer：存储和采样训练数据
+  - [x] 支持轨迹添加和批量采样
+- [x] 优势函数（Advantage）计算
+  - [x] GAE (Generalized Advantage Estimation) 实现
+  - [x] 支持 gamma 和 gae_lambda 参数
+- [x] 策略裁剪（Clipping）
+  - [x] PPO 算法实现，包含策略裁剪逻辑
+  - [x] 支持 clip_epsilon 参数
+
+**实现位置**：
+- `python/scai/training/buffer.py` - 经验回放池
+- `python/scai/training/ppo.py` - PPO 算法核心
 
 ### 3.3 奖励函数初调 (Reward Shaping)
 
-- [ ] **引导奖惩**：
-  - [ ] 早期学会听牌
-  - [ ] 避免成为花猪
-- [ ] **最终奖励**：以局末真实得分（金币/积分）为唯一最终指标
+- [x] **引导奖惩**：
+  - [x] 早期学会听牌 - `ready_reward` 参数（默认 0.1）
+  - [x] 避免成为花猪 - `flower_pig_penalty` 参数（默认 -5.0）
+- [x] **最终奖励**：以局末真实得分（金币/积分）为唯一最终指标
+  - [x] `compute_final_reward()` 方法实现
+  - [x] `final_score_weight` 参数控制权重
+
+**实现位置**：`python/scai/training/reward_shaping.py`
 
 ### 3.4 评估系统 (Evaluator)
 
-- [ ] 实现 Elo 评分机制
-- [ ] 定期自动保存 Checkpoint
-- [ ] 与历史最强版本对弈
+- [x] 实现 Elo 评分机制
+  - [x] EloRating 类：Elo 评分系统
+  - [x] 支持评分更新和查询
+- [x] 定期自动保存 Checkpoint
+  - [x] CheckpointManager：Checkpoint 管理
+  - [x] 支持保存和加载模型、优化器状态
+  - [x] Trainer 集成 Checkpoint 保存
+- [x] 与历史最强版本对弈
+  - [x] `compare_models()` 方法实现模型比较
+  - [x] `should_keep_model()` 方法判断是否保留模型
+  - [x] `get_best_model_id()` 方法获取最佳模型
+
+**实现位置**：
+- `python/scai/training/evaluator.py` - 评估器和 Elo 评分
+- `python/scai/utils/checkpoint.py` - Checkpoint 管理
 
 ---
 

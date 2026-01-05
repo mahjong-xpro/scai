@@ -1,0 +1,16 @@
+# Python 依赖包
+
+# 深度学习框架
+torch>=2.0.0
+numpy>=1.24.0
+
+# Rust 绑定（通过 PyO3）
+# 需要先构建 Rust 扩展：cd rust && maturin develop
+
+# 分布式训练
+ray>=2.0.0  # 分布式并行框架
+
+# 工具库
+tqdm>=4.65.0  # 进度条
+tensorboard>=2.13.0  # 训练可视化
+
