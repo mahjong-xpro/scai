@@ -11,7 +11,7 @@ pub mod engine;
 pub use tile::{Tile, Suit, Wall, Hand};
 pub use utils::{SuitMask, HandMask};
 pub use game::scoring::{Meld, RootCounter, BaseFansCalculator, ActionFlags, Settlement};
-pub use game::state::{GameState, GangRecord, PassedWin};
+pub use game::state::{GameState, GangRecord, PassedWin, DiscardRecord};
 pub use game::action::Action;
 pub use game::player::Player;
 pub use game::settlement::{SettlementResult, GangSettlement, FinalSettlement};

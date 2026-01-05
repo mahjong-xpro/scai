@@ -149,6 +149,11 @@ impl PyGameEngine {
         }
     }
 
+    /// 获取剩余牌数
+    pub fn remaining_tiles(&self) -> usize {
+        self.inner.wall.remaining_count()
+    }
+
     /// 检查游戏是否结束
     pub fn is_game_over(&self) -> bool {
         self.inner.state.is_game_over()

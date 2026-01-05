@@ -27,6 +27,17 @@ pub struct PassedWin {
     pub turn: u32,
 }
 
+/// 弃牌记录
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DiscardRecord {
+    /// 弃牌玩家 ID
+    pub player_id: u8,
+    /// 弃的牌
+    pub tile: Tile,
+    /// 弃牌回合数
+    pub turn: u32,
+}
+
 /// 游戏状态
 #[derive(Debug, Clone)]
 pub struct GameState {
@@ -48,6 +59,8 @@ pub struct GameState {
     pub current_player: u8,
     /// 已离场玩家数量
     pub out_count: u8,
+    /// 弃牌历史记录（按顺序记录所有弃牌）
+    pub discard_history: Vec<DiscardRecord>,
 }
 
 impl GameState {
@@ -68,6 +81,7 @@ impl GameState {
             turn: 0,
             current_player: 0,
             out_count: 0,
+            discard_history: Vec::new(),
         }
     }
 

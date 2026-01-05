@@ -165,6 +165,13 @@ impl GameEngine {
         
         self.state.last_action = Some(Action::Discard { tile });
         
+        // 记录弃牌历史
+        self.state.discard_history.push(crate::game::state::DiscardRecord {
+            player_id,
+            tile,
+            turn: self.state.turn,
+        });
+        
         // 处理出牌后的响应（按优先级）
         match self.handle_discard_responses(player_id, tile)? {
             Some(response_result) => {
