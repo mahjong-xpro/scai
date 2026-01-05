@@ -313,13 +313,48 @@ impl GameEngine {
         }
         
         // 3. 游戏主循环
-        while !self.state.is_game_over() {
+        let mut max_turns = 200; // 最大回合数限制，防止无限循环
+        while !self.state.is_game_over() && max_turns > 0 {
+            max_turns -= 1;
+            
             let current_player = self.state.current_player;
             
             // 当前玩家摸牌
             self.handle_draw(current_player)?;
             
-            // 获取玩家动作
+            // 检查是否可以自摸（摸牌后手牌应该是 14 张）
+            // 注意：这个检查结果可以用于提示玩家，但玩家仍然可以选择不自摸
+            let _can_self_draw = {
+                let player = &self.state.players[current_player as usize];
+                let mut checker = WinChecker::new();
+                let win_result = checker.check_win_with_melds(&player.hand, player.melds.len() as u8);
+                
+                if win_result.is_win {
+                    // 检查缺一门和过胡限制
+                    use crate::engine::action_mask::ActionMask;
+                    use crate::game::scoring::BaseFansCalculator;
+                    let base_fans = BaseFansCalculator::base_fans(win_result.win_type);
+                    let mask = ActionMask::new();
+                    // 使用手牌中的任意一张牌来检查（自摸时不需要特定牌）
+                    if let Some(&tile) = player.hand.tiles_map().keys().next() {
+                        mask.can_win_with_player_id(
+                            &player.hand,
+                            &tile,
+                            &self.state,
+                            player.declared_suit,
+                            base_fans,
+                            true, // 自摸
+                            Some(current_player),
+                        )
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                }
+            };
+            
+            // 获取玩家动作（如果可以自摸，动作掩码应该包含自摸选项）
             let action = action_callback(&self.state, current_player);
             
             // 处理动作
@@ -410,23 +445,31 @@ impl GameEngine {
                 self.state.check_gang_pao(&tile, true);
                 
                 // 检查是否是杠上炮：点炮者是否刚刚杠过牌
-                // 如果上一个动作是杠，且点炮者就是杠牌者，则需要退税
-                if let Some(Action::Gang { .. }) = self.state.last_action {
-                    let discarder = &self.state.players[discarder_id as usize];
-                    // 检查点炮者是否有杠钱收入（说明刚刚杠过牌）
-                    if discarder.gang_earnings > 0 {
-                        // 执行杠上炮退税：点炮者把杠钱全部转交给胡牌者
-                        use crate::game::settlement::GangSettlement;
-                        let refund_amount = discarder.gang_earnings;
-                        gang_pao_refund = Some(GangSettlement::calculate_gang_pao_refund(
-                            discarder_id,
-                            player_id,
-                            refund_amount,
-                        ));
-                        
-                        // 更新玩家杠钱收入（点炮者清零，胡牌者增加）
-                        self.state.players[discarder_id as usize].gang_earnings = 0;
-                        self.state.players[player_id as usize].add_gang_earnings(refund_amount);
+                // 使用 gang_history 的最后一条记录来确认是否是点炮者杠的牌
+                if let Some(last_gang) = self.state.gang_history.last() {
+                    // 检查是否是点炮者杠的牌
+                    if last_gang.player_id == discarder_id {
+                        // 进一步检查：是否是在当前回合或最近几回合内杠的牌
+                        // 由于杠后立即出牌，所以应该是当前回合或上一回合
+                        let turn_diff = self.state.turn.saturating_sub(last_gang.turn);
+                        if turn_diff <= 1 {
+                            // 检查点炮者是否有杠钱收入
+                            let discarder = &self.state.players[discarder_id as usize];
+                            if discarder.gang_earnings > 0 {
+                                // 执行杠上炮退税：点炮者把杠钱全部转交给胡牌者
+                                use crate::game::settlement::GangSettlement;
+                                let refund_amount = discarder.gang_earnings;
+                                gang_pao_refund = Some(GangSettlement::calculate_gang_pao_refund(
+                                    discarder_id,
+                                    player_id,
+                                    refund_amount,
+                                ));
+                                
+                                // 更新玩家杠钱收入（点炮者清零，胡牌者增加）
+                                self.state.players[discarder_id as usize].gang_earnings = 0;
+                                self.state.players[player_id as usize].add_gang_earnings(refund_amount);
+                            }
+                        }
                     }
                 }
             }
@@ -514,13 +557,15 @@ impl GameEngine {
                 
                 let mask = ActionMask::new();
                 // 点炮胡，不是自摸
-                if mask.can_win(
+                // 使用 can_win_with_player_id 明确指定玩家 ID
+                if mask.can_win_with_player_id(
                     &test_hand,
                     &tile,
                     &self.state,
                     declared_suit,
                     base_fans,
                     false, // 点炮胡，不是自摸
+                    Some(*player_id), // 明确指定玩家 ID
                 ) {
                     responses.push((*player_id, ActionResponse::Win));
                     // 胡牌优先级最高，找到第一个可以胡的玩家就处理

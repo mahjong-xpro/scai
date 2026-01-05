@@ -140,6 +140,15 @@ class ReplayBuffer:
         - gae_lambda: GAE 参数（默认 0.95）
         - last_value: 最后一个状态的价值估计（默认 0.0）
         """
+        # 检查所有轨迹是否已完成
+        if len(self.current_trajectory['states']) > 0:
+            raise ValueError("Cannot compute advantages: current trajectory is not finished. Call finish_trajectory() first.")
+        
+        # 验证数据一致性
+        n = len(self.rewards)
+        if len(self.values) != n or len(self.dones) != n:
+            raise ValueError(f"Data length mismatch: rewards={n}, values={len(self.values)}, dones={len(self.dones)}")
+        
         advantages = []
         returns = []
         

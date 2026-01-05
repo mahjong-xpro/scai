@@ -40,6 +40,7 @@ impl ActionMask {
     /// - `declared_suit`: 定缺的花色
     /// - `fans`: 当前番数
     /// - `is_self_draw`: 是否自摸（自摸不受过胡限制）
+    /// - `player_id`: 玩家 ID（可选，如果不提供则使用 state.current_player）
     /// 
     /// # 返回
     /// 
@@ -53,13 +54,41 @@ impl ActionMask {
         fans: u32,
         is_self_draw: bool,
     ) -> bool {
+        self.can_win_with_player_id(hand, tile, state, declared_suit, fans, is_self_draw, None)
+    }
+    
+    /// 检查是否可以胡牌（带 player_id 参数）
+    /// 
+    /// # 参数
+    /// 
+    /// - `hand`: 手牌
+    /// - `tile`: 要胡的牌
+    /// - `state`: 游戏状态
+    /// - `declared_suit`: 定缺的花色
+    /// - `fans`: 当前番数
+    /// - `is_self_draw`: 是否自摸（自摸不受过胡限制）
+    /// - `player_id`: 玩家 ID（可选，如果不提供则使用 state.current_player）
+    /// 
+    /// # 返回
+    /// 
+    /// `true` 表示可以胡，`false` 表示不能胡
+    pub fn can_win_with_player_id(
+        &self,
+        hand: &Hand,
+        tile: &Tile,
+        state: &GameState,
+        declared_suit: Option<Suit>,
+        fans: u32,
+        is_self_draw: bool,
+        player_id_opt: Option<u8>,
+    ) -> bool {
         // 检查缺一门
         if !rules::check_missing_suit(hand, declared_suit) {
             return false;
         }
 
         // 检查过胡锁定（使用新的 Player.passed_hu_fan 机制）
-        let player_id = state.current_player as usize;
+        let player_id = player_id_opt.unwrap_or(state.current_player) as usize;
         if player_id < state.players.len() {
             let player = &state.players[player_id];
             if !rules::check_passed_win_restriction(

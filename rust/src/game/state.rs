@@ -257,21 +257,38 @@ impl GameState {
             *known_tiles.entry(discard_record.tile).or_insert(0) += 1;
         }
 
-        // 对手当前已有的手牌（如果已经被部分填充，也需要计入已知牌）
-        for (i, player) in self.players.iter().enumerate() {
-            if i != viewer_id as usize && !player.is_out {
-                for (tile, &count) in player.hand.tiles_map() {
-                    *known_tiles.entry(*tile).or_insert(0) += count;
-                }
-            }
-        }
+        // 注意：对手当前手牌不应该计入已知牌（因为它们是未知的，需要被重新分配）
+        // 我们只需要统计观察者手牌、所有明牌和所有弃牌
 
-        // 2. 计算剩余未知的牌
-        // 总共 108 张牌，减去已知的牌，再减去牌墙剩余牌数，就是需要分配给对手的牌
+        // 2. 计算需要分配给对手的牌数
+        // 总牌数 = 108
+        // 已知牌数 = 观察者手牌 + 明牌 + 弃牌
+        // 牌墙剩余牌数 = remaining_wall_count
+        // 对手当前手牌数 = 需要被重新分配的牌
+        // 需要分配的牌数 = 108 - 已知牌数 - 牌墙剩余牌数 - 对手当前手牌数
+        
         let total_known: usize = known_tiles.values().sum::<u8>() as usize;
+        
+        // 计算对手当前手牌总数（这些牌需要被重新分配）
+        let opponent_hand_count: usize = self.players.iter()
+            .enumerate()
+            .filter(|(i, _)| *i != viewer_id as usize)
+            .map(|(_, p)| p.hand.total_count())
+            .sum();
+        
+        // 计算需要分配的未知牌数
         let unknown_count = 108usize
             .saturating_sub(total_known)
-            .saturating_sub(remaining_wall_count);
+            .saturating_sub(remaining_wall_count)
+            .saturating_sub(opponent_hand_count);
+        
+        // 验证牌数守恒（调试用）
+        #[cfg(debug_assertions)]
+        {
+            let total = total_known + remaining_wall_count + opponent_hand_count + unknown_count;
+            assert_eq!(total, 108, "牌数不守恒: known={}, wall={}, opponent={}, unknown={}", 
+                       total_known, remaining_wall_count, opponent_hand_count, unknown_count);
+        }
 
         if unknown_count == 0 {
             return; // 没有未知牌需要分配
@@ -332,6 +349,15 @@ impl GameState {
         }
 
         // 6. 将剩余牌随机分配给对手
+        // 先清空对手手牌（准备重新分配）
+        // 这是关键修复：确保分配前清空对手手牌，避免累加导致牌数超过4张
+        for (i, player) in self.players.iter_mut().enumerate() {
+            if i != viewer_id as usize && !player.is_out {
+                player.hand.clear();
+            }
+        }
+        
+        // 然后分配牌
         let mut tile_index = 0;
         for (i, &needed) in opponent_hand_sizes.iter().enumerate() {
             if i == viewer_id as usize {
@@ -347,10 +373,7 @@ impl GameState {
                     break; // 没有更多牌可分配
                 }
                 let tile = available_tiles[tile_index];
-                // 检查是否可以添加（防止超过 4 张）
-                if self.players[i].hand.tile_count(tile) < 4 {
-                    self.players[i].hand.add_tile(tile);
-                }
+                self.players[i].hand.add_tile(tile);
                 tile_index += 1;
             }
         }
