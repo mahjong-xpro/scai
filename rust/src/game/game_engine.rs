@@ -392,14 +392,36 @@ impl GameEngine {
         }
         
         // 设置动作触发标志
+        let mut gang_pao_refund: Option<crate::game::settlement::SettlementResult> = None;
+        
         if discard_info.is_none() {
             // 自摸
             self.state.check_zi_mo();
         } else {
             // 点炮胡，不是自摸
-            // 检查是否是杠上炮
-            if let Some((_discarder_id, tile)) = discard_info {
+            if let Some((discarder_id, tile)) = discard_info {
                 self.state.check_gang_pao(&tile, true);
+                
+                // 检查是否是杠上炮：点炮者是否刚刚杠过牌
+                // 如果上一个动作是杠，且点炮者就是杠牌者，则需要退税
+                if let Some(Action::Gang { .. }) = self.state.last_action {
+                    let discarder = &self.state.players[discarder_id as usize];
+                    // 检查点炮者是否有杠钱收入（说明刚刚杠过牌）
+                    if discarder.gang_earnings > 0 {
+                        // 执行杠上炮退税：点炮者把杠钱全部转交给胡牌者
+                        use crate::game::settlement::GangSettlement;
+                        let refund_amount = discarder.gang_earnings;
+                        gang_pao_refund = Some(GangSettlement::calculate_gang_pao_refund(
+                            discarder_id,
+                            player_id,
+                            refund_amount,
+                        ));
+                        
+                        // 更新玩家杠钱收入（点炮者清零，胡牌者增加）
+                        self.state.players[discarder_id as usize].gang_earnings = 0;
+                        self.state.players[player_id as usize].add_gang_earnings(refund_amount);
+                    }
+                }
             }
         }
         self.state.check_gang_kai(true);
@@ -419,6 +441,7 @@ impl GameEngine {
             settlement,
             can_continue,
             discarder_id: discard_info.map(|(id, _)| id),
+            gang_pao_refund, // 添加杠上炮退税信息
         })
     }
 
@@ -638,24 +661,47 @@ impl GameEngine {
             all_settlements.push(flower_pig_settlement);
         }
         
-        // 4. 退税（杠牌者被查出问题时的退款）
-        // 检查所有杠牌者是否被查出问题
+        // 4. 查大叫退税（流局时，没听牌的人必须把本局收到的所有杠钱退还）
+        // 检查所有未听牌的玩家，无论是否杠过牌，都必须退还杠钱
+        for player in &self.state.players {
+            if !player.is_out && !player.is_ready {
+                // 未听牌玩家必须退还所有杠钱
+                let refund_amount = player.gang_earnings;
+                if refund_amount > 0 {
+                    // 找到原始支付者（所有非该玩家的其他玩家）
+                    let original_payers: Vec<u8> = (0..4u8)
+                        .filter(|&id| id != player.id && !self.state.players[id as usize].is_out)
+                        .collect();
+                    
+                    if !original_payers.is_empty() {
+                        let refund_settlement = FinalSettlement::refund_gang_money(
+                            player.id,
+                            refund_amount,
+                            &original_payers,
+                        );
+                        all_settlements.push(refund_settlement);
+                    }
+                }
+            }
+        }
+        
+        // 5. 查花猪退税（如果杠牌者被查出花猪，也需要退税）
+        // 注意：这里只处理杠牌者被查出花猪的情况，未听牌的杠牌者已在上面处理
         for gang_record in &self.state.gang_history {
             let gang_player = &self.state.players[gang_record.player_id as usize];
             
-            // 如果杠牌者被查出花猪或未听牌，需要退税
-            if !gang_player.is_out {
+            // 如果杠牌者被查出花猪（且已听牌，因为未听牌已在上面处理），需要退税
+            if !gang_player.is_out && gang_player.is_ready {
                 let is_flower_pig = gang_player.has_declared_suit_tiles();
-                let is_not_ready = !gang_player.is_ready;
                 
-                if is_flower_pig || is_not_ready {
-                    let refund_amount = gang_player.gang_earnings;
-                    if refund_amount > 0 {
-                        // 找到原始支付者（所有非杠牌者）
-                        let original_payers: Vec<u8> = (0..4u8)
-                            .filter(|&id| id != gang_record.player_id)
-                            .collect();
-                        
+                if is_flower_pig && gang_player.gang_earnings > 0 {
+                    // 找到原始支付者（所有非杠牌者）
+                    let original_payers: Vec<u8> = (0..4u8)
+                        .filter(|&id| id != gang_record.player_id && !self.state.players[id as usize].is_out)
+                        .collect();
+                    
+                    if !original_payers.is_empty() {
+                        let refund_amount = gang_player.gang_earnings;
                         let refund_settlement = FinalSettlement::refund_gang_money(
                             gang_record.player_id,
                             refund_amount,
@@ -692,6 +738,8 @@ pub enum ActionResult {
         can_continue: bool,
         /// 点炮者 ID（None 表示自摸）
         discarder_id: Option<u8>,
+        /// 杠上炮退税（如果有）
+        gang_pao_refund: Option<crate::game::settlement::SettlementResult>,
     },
     /// 过
     Passed,

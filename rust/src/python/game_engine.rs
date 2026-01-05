@@ -115,12 +115,18 @@ impl PyGameEngine {
                         dict.set_item("kong_type", format!("{:?}", kong_type))?;
                         dict.set_item("settlement", format!("{:?}", settlement))?;
                     },
-                    crate::game::game_engine::ActionResult::Won { player_id, win_result, settlement, can_continue } => {
+                    crate::game::game_engine::ActionResult::Won { player_id, win_result, settlement, can_continue, discarder_id, gang_pao_refund } => {
                         dict.set_item("type", "won")?;
                         dict.set_item("player_id", player_id)?;
                         dict.set_item("win_result", format!("{:?}", win_result))?;
                         dict.set_item("settlement", format!("{:?}", settlement))?;
                         dict.set_item("can_continue", can_continue)?;
+                        if let Some(discarder) = discarder_id {
+                            dict.set_item("discarder_id", discarder)?;
+                        }
+                        if let Some(ref refund) = gang_pao_refund {
+                            dict.set_item("gang_pao_refund", format!("{:?}", refund))?;
+                        }
                     },
                     crate::game::game_engine::ActionResult::Passed => {
                         dict.set_item("type", "passed")?;
