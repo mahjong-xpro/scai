@@ -263,23 +263,43 @@ class LLMCoach:
     def _call_openai(self, prompt: str) -> str:
         """调用OpenAI API"""
         try:
-            import openai
-            
-            if self._client is None:
-                openai.api_key = self.config.api_key
-                self._client = openai
-            
-            response = openai.ChatCompletion.create(
-                model=self.config.model_name,
-                messages=[
-                    {"role": "system", "content": self.SYSTEM_PROMPT},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=self.config.temperature,
-                max_tokens=self.config.max_tokens,
-            )
-            
-            return response.choices[0].message.content
+            # 尝试使用新版本 openai (>=1.0.0)
+            try:
+                from openai import OpenAI
+                
+                if self._client is None:
+                    self._client = OpenAI(api_key=self.config.api_key)
+                
+                response = self._client.chat.completions.create(
+                    model=self.config.model_name,
+                    messages=[
+                        {"role": "system", "content": self.SYSTEM_PROMPT},
+                        {"role": "user", "content": prompt}
+                    ],
+                    temperature=self.config.temperature,
+                    max_tokens=self.config.max_tokens,
+                )
+                
+                return response.choices[0].message.content
+            except (ImportError, AttributeError):
+                # 回退到旧版本 openai (<1.0.0)
+                import openai
+                
+                if self._client is None:
+                    openai.api_key = self.config.api_key
+                    self._client = openai
+                
+                response = openai.ChatCompletion.create(
+                    model=self.config.model_name,
+                    messages=[
+                        {"role": "system", "content": self.SYSTEM_PROMPT},
+                        {"role": "user", "content": prompt}
+                    ],
+                    temperature=self.config.temperature,
+                    max_tokens=self.config.max_tokens,
+                )
+                
+                return response.choices[0].message.content
         except ImportError:
             raise ImportError("Please install openai: pip install openai")
         except Exception as e:
