@@ -97,7 +97,30 @@ impl GameEngine {
             Action::Pong { tile } => self.handle_pong(player_id, tile),
             Action::Gang { tile, is_concealed } => self.handle_gang(player_id, tile, is_concealed),
             Action::Win => self.handle_win(player_id),
-            Action::Pass => Ok(ActionResult::Passed),
+            Action::Pass => {
+                // 处理过胡：如果上一个动作是出牌，且当前玩家可以胡，则记录过胡番数
+                if let Some(Action::Discard { tile }) = self.state.last_action {
+                    let player = &self.state.players[player_id as usize];
+                    
+                    // 检查是否可以胡这张牌
+                    let mut test_hand = player.hand.clone();
+                    test_hand.add_tile(tile);
+                    let mut checker = WinChecker::new();
+                    let melds_count = player.melds.len() as u8;
+                    let win_result = checker.check_win_with_melds(&test_hand, melds_count);
+                    
+                    if win_result.is_win {
+                        // 计算番数
+                        use crate::game::scoring::BaseFansCalculator;
+                        let base_fans = BaseFansCalculator::base_fans(win_result.win_type);
+                        
+                        // 记录过胡番数
+                        let player = &mut self.state.players[player_id as usize];
+                        player.record_passed_win(base_fans);
+                    }
+                }
+                Ok(ActionResult::Passed)
+            },
             Action::DeclareSuit { .. } => {
                 // 定缺动作应该在 run() 方法的定缺阶段处理，不应该在这里
                 Err(GameError::InvalidAction)
@@ -113,7 +136,11 @@ impl GameEngine {
         }
         
         if let Some(tile) = self.wall.draw() {
-            self.state.players[player_id as usize].hand.add_tile(tile);
+            let player = &mut self.state.players[player_id as usize];
+            player.hand.add_tile(tile);
+            // 清除过胡锁定（规则：过胡锁定只在"下一次摸牌前"有效）
+            player.clear_passed_win();
+            
             self.state.last_action = Some(Action::Draw);
             
             // 检查是否是最后一张牌
@@ -456,12 +483,14 @@ impl GameEngine {
                 let declared_suit = player.declared_suit;
                 
                 let mask = ActionMask::new();
+                // 点炮胡，不是自摸
                 if mask.can_win(
                     &test_hand,
                     &tile,
                     &self.state,
                     declared_suit,
                     base_fans,
+                    false, // 点炮胡，不是自摸
                 ) {
                     responses.push((*player_id, ActionResponse::Win));
                     // 胡牌优先级最高，找到第一个可以胡的玩家就处理

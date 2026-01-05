@@ -148,7 +148,7 @@ fn test_game_flow_with_actions() {
     for i in 0..4 {
         for _ in 0..13 {
             if let Some(tile) = wall.draw() {
-                game_state.hands[i].add_tile(tile);
+                game_state.players[i].hand.add_tile(tile);
             }
         }
     }
@@ -161,12 +161,12 @@ fn test_game_flow_with_actions() {
         
         // 摸牌
         if let Some(tile) = wall.draw() {
-            game_state.hands[player as usize].add_tile(tile);
+            game_state.players[player as usize].hand.add_tile(tile);
             game_state.last_action = Some(Action::Draw);
             
             // 检查胡牌
             let mut checker = WinChecker::new();
-            let result = checker.check_win(&game_state.hands[player as usize]);
+            let result = checker.check_win(&game_state.players[player as usize].hand);
             
             if result.is_win {
                 game_state.check_zi_mo();
@@ -174,8 +174,8 @@ fn test_game_flow_with_actions() {
             }
             
             // 出牌
-            if let Some(tile_to_discard) = game_state.hands[player as usize].distinct_tiles().into_iter().next() {
-                game_state.hands[player as usize].remove_tile(tile_to_discard);
+            if let Some(tile_to_discard) = game_state.players[player as usize].hand.distinct_tiles().into_iter().next() {
+                game_state.players[player as usize].hand.remove_tile(tile_to_discard);
                 game_state.last_action = Some(Action::Discard { tile: tile_to_discard });
             }
         }

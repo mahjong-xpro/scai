@@ -23,7 +23,7 @@ pub fn check_missing_suit(hand: &Hand, declared_suit: Option<Suit>) -> bool {
     true // 定缺门已打完，可以胡
 }
 
-/// 检查过胡限制
+/// 检查过胡限制（旧版，基于 PassedWin 记录）
 /// 
 /// # 参数
 /// 
@@ -54,5 +54,44 @@ pub fn can_win_after_pass(
         }
     }
     true // 可以胡
+}
+
+/// 检查过胡锁定（新版，基于 Player.passed_hu_fan）
+/// 
+/// # 参数
+/// 
+/// - `fans`: 当前点炮番数
+/// - `passed_hu_fan`: 玩家记录的过胡番数（None 表示未过胡）
+/// - `is_self_draw`: 是否自摸（自摸不受过胡限制）
+/// 
+/// # 返回
+/// 
+/// `true` 表示可以胡，`false` 表示不能胡（过胡锁定）
+/// 
+/// # 规则
+/// 
+/// 如果玩家放弃了当前点炮，在下一次摸牌前，不能胡同一张牌或番数 <= 该记录值的点炮牌
+/// 注意：自摸不受此限制
+pub fn check_passed_win_restriction(
+    fans: u32,
+    passed_hu_fan: Option<u32>,
+    is_self_draw: bool,
+) -> bool {
+    // 自摸不受过胡限制
+    if is_self_draw {
+        return true;
+    }
+    
+    // 如果没有过胡记录，可以胡
+    let Some(threshold) = passed_hu_fan else {
+        return true;
+    };
+    
+    // 如果当前番数 <= 过胡记录的番数，不能胡
+    if fans <= threshold {
+        return false;
+    }
+    
+    true // 可以胡（番数更高）
 }
 

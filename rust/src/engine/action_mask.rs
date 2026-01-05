@@ -39,6 +39,7 @@ impl ActionMask {
     /// - `state`: 游戏状态
     /// - `declared_suit`: 定缺的花色
     /// - `fans`: 当前番数
+    /// - `is_self_draw`: 是否自摸（自摸不受过胡限制）
     /// 
     /// # 返回
     /// 
@@ -50,14 +51,27 @@ impl ActionMask {
         state: &GameState,
         declared_suit: Option<Suit>,
         fans: u32,
+        is_self_draw: bool,
     ) -> bool {
         // 检查缺一门
         if !rules::check_missing_suit(hand, declared_suit) {
             return false;
         }
 
-        // 检查过胡限制
+        // 检查过胡锁定（使用新的 Player.passed_hu_fan 机制）
         let player_id = state.current_player as usize;
+        if player_id < state.players.len() {
+            let player = &state.players[player_id];
+            if !rules::check_passed_win_restriction(
+                fans,
+                player.passed_hu_fan,
+                is_self_draw,
+            ) {
+                return false;
+            }
+        }
+
+        // 兼容旧版：检查过胡限制（基于 PassedWin 记录）
         if player_id < state.passed_wins.len() {
             if !rules::can_win_after_pass(
                 tile,
@@ -115,7 +129,7 @@ impl ActionMask {
                 let mut checker = WinChecker::new();
                 let melds_count = player.melds.len() as u8;
                 let result = checker.check_win_with_melds(&test_hand, melds_count);
-                if result.is_win && mask.can_win(&player.hand, &tile, state, Some(declared_suit), 1) {
+                if result.is_win && mask.can_win(&player.hand, &tile, state, Some(declared_suit), 1, false) {
                     mask.can_win.push(tile);
                 }
             } else {
@@ -126,7 +140,7 @@ impl ActionMask {
                 let mut checker = WinChecker::new();
                 let melds_count = player.melds.len() as u8;
                 let result = checker.check_win_with_melds(&test_hand, melds_count);
-                if result.is_win && mask.can_win(&player.hand, &tile, state, None, 1) {
+                if result.is_win && mask.can_win(&player.hand, &tile, state, None, 1, false) {
                     mask.can_win.push(tile);
                 }
             }
@@ -458,7 +472,9 @@ impl ActionMask {
                         let player_id_usize = player_id as usize;
                         if player_id_usize < state.passed_wins.len() {
                             // 需要计算番数，这里简化处理
-                            if !rules::can_win_after_pass(&tile, 1, &state.passed_wins[player_id_usize], state.turn) {
+                            // 使用新的过胡锁定检查
+                            let player = &state.players[player_id_usize];
+                            if !rules::check_passed_win_restriction(1, player.passed_hu_fan, false) {
                                 return false;
                             }
                         }
@@ -505,10 +521,10 @@ mod tests {
         let mask = ActionMask::new();
         
         // 定缺条子，但手牌中没有条子，可以胡
-        assert!(mask.can_win(&hand, &Tile::Wan(1), &state, Some(Suit::Tiao), 1));
+        assert!(mask.can_win(&hand, &Tile::Wan(1), &state, Some(Suit::Tiao), 1, false));
         
         // 定缺万子，但手牌中还有万子，不能胡
-        assert!(!mask.can_win(&hand, &Tile::Wan(1), &state, Some(Suit::Wan), 1));
+        assert!(!mask.can_win(&hand, &Tile::Wan(1), &state, Some(Suit::Wan), 1, false));
     }
 
     #[test]
@@ -528,13 +544,13 @@ mod tests {
         let mask = ActionMask::new();
         
         // 尝试胡同一张牌，番数更低，不能胡
-        assert!(!mask.can_win(&hand, &Tile::Wan(5), &state, None, 2));
+        assert!(!mask.can_win(&hand, &Tile::Wan(5), &state, None, 2, false));
         
         // 尝试胡同一张牌，番数更高，可以胡
-        assert!(mask.can_win(&hand, &Tile::Wan(5), &state, None, 8));
+        assert!(mask.can_win(&hand, &Tile::Wan(5), &state, None, 8, false));
         
         // 尝试胡不同的牌，可以胡
-        assert!(mask.can_win(&hand, &Tile::Wan(6), &state, None, 2));
+        assert!(mask.can_win(&hand, &Tile::Wan(6), &state, None, 2, false));
     }
 
     #[test]

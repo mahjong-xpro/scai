@@ -18,6 +18,11 @@ pub struct Player {
     pub is_ready: bool,
     /// 累计杠钱收入（用于退税）
     pub gang_earnings: i32,
+    /// 过胡锁定：记录放弃的点炮番数（None 表示未过胡）
+    /// 
+    /// 规则：如果玩家放弃了当前点炮，在下一次摸牌前，不能胡同一张牌或番数 <= 该记录值的点炮牌
+    /// 注意：自摸不受此限制
+    pub passed_hu_fan: Option<u32>,
 }
 
 impl Player {
@@ -31,6 +36,7 @@ impl Player {
             is_out: false,
             is_ready: false,
             gang_earnings: 0,
+            passed_hu_fan: None,
         }
     }
 
@@ -99,6 +105,35 @@ impl Player {
     pub fn get_ready_tiles(&self) -> Vec<Tile> {
         use crate::game::ready::ReadyChecker;
         ReadyChecker::check_ready(&self.hand, &self.melds)
+    }
+
+    /// 记录过胡（放弃点炮）
+    /// 
+    /// # 参数
+    /// 
+    /// - `fans`: 放弃的点炮番数
+    /// 
+    /// 如果当前没有过胡记录，或新的番数更小，则更新记录
+    pub fn record_passed_win(&mut self, fans: u32) {
+        match self.passed_hu_fan {
+            None => {
+                // 第一次过胡，直接记录
+                self.passed_hu_fan = Some(fans);
+            }
+            Some(existing_fans) => {
+                // 如果新的番数更小，更新记录（取更严格的限制）
+                if fans < existing_fans {
+                    self.passed_hu_fan = Some(fans);
+                }
+            }
+        }
+    }
+
+    /// 清除过胡锁定（在玩家摸牌后调用）
+    /// 
+    /// 规则：过胡锁定只在"下一次摸牌前"有效
+    pub fn clear_passed_win(&mut self) {
+        self.passed_hu_fan = None;
     }
 }
 

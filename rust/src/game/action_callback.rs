@@ -92,8 +92,8 @@ pub mod examples {
             let base_fans = BaseFansCalculator::base_fans(win_result.win_type);
             let mask = ActionMask::new();
             
-            // 简化处理：如果可以胡就胡
-            if mask.can_win(&player.hand, &Tile::Wan(1), state, player.declared_suit, base_fans) {
+            // 简化处理：如果可以胡就胡（自摸）
+            if mask.can_win(&player.hand, &Tile::Wan(1), state, player.declared_suit, base_fans, true) {
                 return Action::Win;
             }
         }
