@@ -117,20 +117,28 @@ impl ActionMask {
         
         let player = &state.players[player_id as usize];
         
+        // 检查定缺色状态：如果还有定缺门的牌，必须严格限制动作
+        let has_declared_suit_tiles = player.has_declared_suit_tiles();
+        let declared_suit = player.declared_suit;
+        
         // 如果是响应别人的出牌
         if let Some(tile) = discarded_tile {
             // 检查是否可以胡牌
-            if let Some(declared_suit) = player.declared_suit {
-                // 这里需要计算番数，暂时简化处理
-                // 需要先检查是否能胡，这里简化处理
-                use crate::tile::win_check::WinChecker;
-                let mut test_hand = player.hand.clone();
-                test_hand.add_tile(tile);
-                let mut checker = WinChecker::new();
-                let melds_count = player.melds.len() as u8;
-                let result = checker.check_win_with_melds(&test_hand, melds_count);
-                if result.is_win && mask.can_win(&player.hand, &tile, state, Some(declared_suit), 1, false) {
-                    mask.can_win.push(tile);
+            if let Some(declared) = declared_suit {
+                // 如果还有定缺门的牌，不能胡非定缺色的牌
+                if has_declared_suit_tiles && tile.suit() != declared {
+                    // 严格屏蔽：定缺色未打完时，不能胡非定缺色的牌
+                } else {
+                    // 检查是否能胡
+                    use crate::tile::win_check::WinChecker;
+                    let mut test_hand = player.hand.clone();
+                    test_hand.add_tile(tile);
+                    let mut checker = WinChecker::new();
+                    let melds_count = player.melds.len() as u8;
+                    let result = checker.check_win_with_melds(&test_hand, melds_count);
+                    if result.is_win && mask.can_win(&player.hand, &tile, state, Some(declared), 1, false) {
+                        mask.can_win.push(tile);
+                    }
                 }
             } else {
                 // 未定缺的情况（理论上不应该发生）
@@ -146,33 +154,70 @@ impl ActionMask {
             }
             
             // 检查是否可以碰牌
+            // 严格检查：如果还有定缺门的牌，不能碰非定缺色的牌
             if let Some(pongable) = PongHandler::get_pongable_tile(player, &tile) {
-                mask.can_pong.push(pongable);
+                if has_declared_suit_tiles {
+                    // 如果还有定缺门的牌，只能碰定缺色的牌
+                    if let Some(declared) = declared_suit {
+                        if tile.suit() == declared {
+                            mask.can_pong.push(pongable);
+                        }
+                    }
+                } else {
+                    // 定缺门已打完，可以碰任何牌
+                    mask.can_pong.push(pongable);
+                }
             }
             
             // 检查是否可以直杠
+            // 严格检查：如果还有定缺门的牌，不能杠非定缺色的牌
             if KongHandler::can_direct_kong(player, &tile).is_some() {
-                mask.can_gang.push(tile);
+                if has_declared_suit_tiles {
+                    // 如果还有定缺门的牌，只能杠定缺色的牌
+                    if let Some(declared) = declared_suit {
+                        if tile.suit() == declared {
+                            mask.can_gang.push(tile);
+                        }
+                    }
+                } else {
+                    // 定缺门已打完，可以杠任何牌
+                    mask.can_gang.push(tile);
+                }
             }
         } else {
             // 自己的回合，检查可以出的牌
-            // 这里应该检查所有手牌，但需要排除定缺门的牌
+            // 严格检查：如果还有定缺门的牌，只能出定缺色的牌
             for (tile, _) in player.hand.tiles_map() {
-                // 检查是否是定缺门的牌（如果还有定缺门的牌，不能出其他牌）
-                if let Some(declared) = player.declared_suit {
-                    if tile.suit() != declared {
-                        mask.can_discard.push(*tile);
+                if has_declared_suit_tiles {
+                    // 如果还有定缺门的牌，只能出定缺色的牌
+                    if let Some(declared) = declared_suit {
+                        if tile.suit() == declared {
+                            mask.can_discard.push(*tile);
+                        }
                     }
                 } else {
+                    // 定缺门已打完，可以出任何牌
                     mask.can_discard.push(*tile);
                 }
             }
             
             // 检查是否可以加杠或暗杠
+            // 严格检查：如果还有定缺门的牌，不能杠非定缺色的牌
             for (tile, _) in player.hand.tiles_map() {
+                if has_declared_suit_tiles {
+                    // 如果还有定缺门的牌，只能杠定缺色的牌
+                    if let Some(declared) = declared_suit {
+                        if tile.suit() != declared {
+                            continue; // 跳过非定缺色的牌
+                        }
+                    }
+                }
+                
+                // 检查加杠
                 if KongHandler::can_add_kong(player, tile).is_some() {
                     mask.can_gang.push(*tile);
                 }
+                // 检查暗杠
                 if KongHandler::can_concealed_kong(player, tile).is_some() {
                     mask.can_gang.push(*tile);
                 }
@@ -418,11 +463,28 @@ impl ActionMask {
                 return false; // 自己回合不能碰牌
             }
             if let Some(tile) = Self::index_to_tile(action_index - 108) {
+                // 严格检查：如果还有定缺门的牌，不能碰非定缺色的牌
+                if player.has_declared_suit_tiles() {
+                    if let Some(declared) = player.declared_suit {
+                        if tile.suit() != declared {
+                            return false; // 定缺色未打完，不能碰非定缺色的牌
+                        }
+                    }
+                }
                 return PongHandler::can_pong(player, &tile);
             }
         } else if action_index < 324 {
             // 杠牌动作
             if let Some(tile) = Self::index_to_tile(action_index - 216) {
+                // 严格检查：如果还有定缺门的牌，不能杠非定缺色的牌
+                if player.has_declared_suit_tiles() {
+                    if let Some(declared) = player.declared_suit {
+                        if tile.suit() != declared {
+                            return false; // 定缺色未打完，不能杠非定缺色的牌
+                        }
+                    }
+                }
+                
                 if is_own_turn {
                     // 加杠或暗杠
                     return KongHandler::can_add_kong(player, &tile).is_some()
@@ -434,6 +496,17 @@ impl ActionMask {
             }
         } else if action_index < 432 {
             // 胡牌动作
+            // 严格检查：如果还有定缺门的牌，不能胡非定缺色的牌
+            if let Some(win_tile) = Self::index_to_tile(action_index - 324) {
+                if player.has_declared_suit_tiles() {
+                    if let Some(declared) = player.declared_suit {
+                        if win_tile.suit() != declared {
+                            return false; // 定缺色未打完，不能胡非定缺色的牌
+                        }
+                    }
+                }
+            }
+            
             if is_own_turn {
                 // 自摸（需要检查手牌）
                 use crate::tile::win_check::WinChecker;
@@ -453,6 +526,14 @@ impl ActionMask {
                     if let Some(win_tile) = Self::index_to_tile(action_index - 324) {
                         if win_tile != tile {
                             return false;
+                        }
+                        // 严格检查：如果还有定缺门的牌，不能胡非定缺色的牌
+                        if player.has_declared_suit_tiles() {
+                            if let Some(declared) = player.declared_suit {
+                                if tile.suit() != declared {
+                                    return false; // 定缺色未打完，不能胡非定缺色的牌
+                                }
+                            }
                         }
                         // 检查是否可以胡这张牌
                         use crate::tile::win_check::WinChecker;
