@@ -494,21 +494,43 @@
 
 ### 4.1 ISMCTS 搜索算法
 
-- [ ] 在推理端实现信息集蒙特卡洛树搜索
-- [ ] 对未知牌墙进行 Determinization 采样
+- [x] 在推理端实现信息集蒙特卡洛树搜索
+  - [x] ISMCTS 类：信息集蒙特卡洛树搜索实现
+  - [x] ISMCTSNode：搜索树节点，支持 UCB1 选择
+  - [x] 支持 Selection、Expansion、Rollout、Backpropagation 四个阶段
+- [x] 对未知牌墙进行 Determinization 采样
+  - [x] `_determinize_state()` 方法实现
+  - [x] 使用 `fill_unknown_cards` 方法填充未知牌
+  - [x] 支持随机种子控制确定性
+
+**实现位置**：`python/scai/search/ismcts.py`
 
 ### 4.2 对抗性鲁棒训练
 
-- [ ] 针对性模拟极端局势：
-  - [ ] 被三家定缺针对
-  - [ ] 起手极烂
-- [ ] 提升防御避炮能力
+- [x] 针对性模拟极端局势：
+  - [x] 被三家定缺针对 - `create_targeted_declare_scenario()` 方法
+  - [x] 起手极烂 - `create_bad_hand_scenario()` 方法
+- [x] 提升防御避炮能力
+  - [x] `compute_defense_reward()` 方法计算防御奖励
+  - [x] 安全出牌奖励、避免点炮奖励
+
+**实现位置**：`python/scai/training/adversarial.py`
 
 ### 4.3 超参数自动化搜索
 
-- [ ] 学习率调优
-- [ ] 探索因子（Entropy Loss）调优
-- [ ] 搜索深度调优
+- [x] 学习率调优
+  - [x] 支持网格搜索和随机搜索
+  - [x] 学习率候选列表：1e-4, 3e-4, 1e-3, 3e-3
+- [x] 探索因子（Entropy Loss）调优
+  - [x] 探索因子候选列表：0.001, 0.01, 0.1, 0.5
+- [x] 搜索深度调优
+  - [x] ISMCTS 搜索深度候选列表：50, 100, 200, 500
+- [x] 超参数搜索框架
+  - [x] GridSearch：网格搜索
+  - [x] RandomSearch：随机搜索
+  - [x] BayesianOptimization：贝叶斯优化（占位符）
+
+**实现位置**：`python/scai/training/hyperparameter_search.py`
 
 ---
 
