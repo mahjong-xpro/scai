@@ -137,6 +137,35 @@ impl PyActionMask {
             .ok_or_else(|| PyErr::new::<pyo3::exceptions::PyValueError, _>("Failed to convert tile to index"))
     }
 
+    /// 获取动作掩码（用于 AI 训练）
+    /// 
+    /// # 参数
+    /// 
+    /// - `player_id`: 玩家 ID
+    /// - `state`: 游戏状态
+    /// - `is_own_turn`: 是否是自己回合
+    /// - `discarded_tile`: 别人打出的牌（可选，使用索引 0-107）
+    /// 
+    /// # 返回
+    /// 
+    /// Vec<f32>，长度为 434，每个元素为 0.0 或 1.0
+    #[staticmethod]
+    pub fn get_action_mask(
+        player_id: u8,
+        state: &crate::python::game_state::PyGameState,
+        is_own_turn: bool,
+        discarded_tile: Option<u8>,
+    ) -> PyResult<Vec<f32>> {
+        let tile = discarded_tile.and_then(|idx| ActionMask::index_to_tile(idx as usize));
+        let mask = ActionMask::generate(player_id, state.inner(), tile);
+        let bool_mask = mask.to_bool_array(is_own_turn, tile);
+        
+        // 转换为 Vec<f32>（bool → f32：true → 1.0，false → 0.0）
+        let result: Vec<f32> = bool_mask.iter().map(|&b| if b { 1.0 } else { 0.0 }).collect();
+        
+        Ok(result)
+    }
+
     /// 转换为字符串（用于调试）
     fn __repr__(&self) -> String {
         format!("PyActionMask(can_win={}, can_pong={}, can_gang={}, can_discard={})",

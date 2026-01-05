@@ -58,7 +58,7 @@ pub fn state_to_tensor(
             for (tile, &tile_count) in player.hand.tiles_map() {
                 if tile_count == count {
                     let (suit_idx, rank_idx) = tile_to_indices(tile);
-                    data[[count - 1, suit_idx, rank_idx]] = 1.0;
+                    data[[(count - 1) as usize, suit_idx, rank_idx]] = 1.0;
                 }
             }
         }
