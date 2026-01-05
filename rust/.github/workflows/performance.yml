@@ -1,0 +1,51 @@
+name: Performance Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  performance:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Install Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        override: true
+    
+    - name: Cache Cargo registry
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/bin/
+          ~/.cargo/registry/index/
+          ~/.cargo/registry/cache/
+          ~/.cargo/git/db/
+          target/
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+    
+    - name: Run benchmarks
+      run: |
+        cd rust
+        cargo bench --bench win_check_bench --bench scoring_bench --bench action_mask_bench -- --output-format json | tee benchmark_results.json
+    
+    - name: Check performance thresholds
+      run: |
+        cd rust
+        # 这里可以添加性能阈值检查逻辑
+        # 例如：检查平均时间是否超过 10μs
+        echo "性能阈值检查（待实现具体逻辑）"
+    
+    - name: Upload benchmark results
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: benchmark-results
+        path: rust/benchmark_results.json
+
