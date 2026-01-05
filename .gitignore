@@ -1,7 +1,9 @@
 # Rust
 /target/
+rust/target/
 **/*.rs.bk
 Cargo.lock
+rust/Cargo.lock
 
 # Python
 __pycache__/
@@ -37,6 +39,7 @@ Thumbs.db
 
 # Project specific
 *.md.bak
-rust/target/
-rust/Cargo.lock
+
+# Test and benchmark output
+*.profdata
 
