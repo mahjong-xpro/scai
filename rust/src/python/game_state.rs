@@ -372,6 +372,7 @@ impl PyGameState {
     }
 
     /// 获取可变内部 GameState（用于内部访问）
+    #[allow(dead_code)]
     pub(crate) fn inner_mut(&mut self) -> &mut GameState {
         &mut self.inner
     }

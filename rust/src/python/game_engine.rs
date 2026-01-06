@@ -174,7 +174,7 @@ impl PyGameEngine {
         &mut self,
         player_id: u8,
         hand_dict: &PyDict,
-        py: Python,
+        _py: Python,
     ) -> PyResult<bool> {
         // 直接修改内部状态
         use crate::game::constants::NUM_PLAYERS;
