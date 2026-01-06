@@ -212,7 +212,14 @@ class DataCollector:
                     invalid_trajectories += 1
                     # 记录无效轨迹（即使是非严格模式）
                     if validation_errors:
-                        print(f"Warning: Trajectory {traj_idx} has {len(validation_errors)} validation errors")
+                        # 只打印前几个轨迹的详细错误，避免日志过多
+                        if traj_idx < 3:
+                            print(f"Warning: Trajectory {traj_idx} has {len(validation_errors)} validation errors:")
+                            for error in validation_errors[:10]:  # 显示前10个错误
+                                print(f"  - {error}")
+                        elif traj_idx == 3:
+                            print(f"Warning: More trajectories have validation errors. Suppressing detailed logs...")
+                            print(f"  (Showing error summary at the end of collection)")
                         # 在非严格模式下，记录但继续处理
                         if self.validator.strict_mode:
                             # 严格模式：跳过无效轨迹
@@ -275,6 +282,19 @@ class DataCollector:
                 'num_errors': len(validation_stats['errors']),
                 'num_warnings': len(validation_stats['warnings']),
             }
+            # 如果有错误，打印最常见的错误类型
+            if validation_stats.get('top_errors') and len(validation_stats['top_errors']) > 0:
+                print(f"\n{'='*60}")
+                print(f"Validation Error Summary:")
+                print(f"  Total errors: {len(validation_stats['errors'])}")
+                print(f"  Valid trajectories: {validation_stats['valid_trajectories']}")
+                print(f"  Invalid trajectories: {validation_stats['invalid_trajectories']}")
+                print(f"  Valid rate: {validation_stats['valid_rate']:.2%}")
+                print(f"\nTop 5 most common error types:")
+                for error_type, count in validation_stats['top_errors']:
+                    percentage = (count / len(validation_stats['errors'])) * 100 if validation_stats['errors'] else 0
+                    print(f"  - {error_type}: {count} occurrences ({percentage:.1f}%)")
+                print(f"{'='*60}\n")
         
         return result
     

@@ -313,8 +313,10 @@ class DataValidator:
             warnings.warn(f"Step {step}: Action mask contains values other than 0 and 1")
         
         # 检查动作是否在掩码中允许
-        if action_mask[action] < 0.5:
-            error_msg = f"Step {step}: Action {action} is not allowed by action mask (mask[{action}] = {action_mask[action]})"
+        # 注意：动作掩码可能是浮点数（0.0-1.0），使用较小的阈值来容忍浮点误差
+        mask_value = float(action_mask[action])
+        if mask_value < 0.1:  # 放宽阈值，从 0.5 改为 0.1，容忍浮点误差
+            error_msg = f"Step {step}: Action {action} is not allowed by action mask (mask[{action}] = {mask_value})"
             errors.append(error_msg)
             if self.strict_mode:
                 raise ValueError(f"Trajectory {trajectory_id}: {error_msg}")
@@ -383,6 +385,16 @@ class DataValidator:
     
     def get_validation_stats(self) -> Dict:
         """获取验证统计信息"""
+        # 统计最常见的错误类型
+        error_types = {}
+        for error in self.validation_stats['errors']:
+            # 提取错误类型（错误消息的前几个词）
+            error_type = error.split(':')[0] if ':' in error else error[:50]
+            error_types[error_type] = error_types.get(error_type, 0) + 1
+        
+        # 获取最常见的5个错误类型
+        top_errors = sorted(error_types.items(), key=lambda x: x[1], reverse=True)[:5]
+        
         return {
             **self.validation_stats,
             'valid_rate': (
@@ -390,6 +402,7 @@ class DataValidator:
                 if self.validation_stats['total_trajectories'] > 0
                 else 0.0
             ),
+            'top_errors': top_errors,  # 添加最常见的错误类型
         }
     
     def reset_stats(self):
