@@ -35,8 +35,8 @@ training:
 
 # 自对弈配置
 selfplay:
-  num_workers: 100              # Ray Worker 数量
-  games_per_worker: 10         # 每个 Worker 运行的游戏数量
+  num_workers: 10              # Ray Worker 数量
+  games_per_worker: 100        # 每个 Worker 运行的游戏数量
   oracle_enabled: true         # 是否启用 Oracle 特征（训练时使用）
   validate_data: true          # 是否验证轨迹数据
   strict_validation: false     # 严格验证模式（true: 发现错误时抛出异常，false: 只警告）
