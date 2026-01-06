@@ -159,6 +159,32 @@ impl PyGameEngine {
         self.inner.state.is_game_over()
     }
 
+    /// 定缺（三花色必缺一）
+    /// 
+    /// # 参数
+    /// 
+    /// - `player_id`: 玩家 ID (0-3)
+    /// - `suit`: 定缺花色字符串 ("Wan", "Tong", "Tiao")
+    /// 
+    /// # 返回
+    /// 
+    /// 是否成功定缺
+    pub fn declare_suit(&mut self, player_id: u8, suit: &str) -> PyResult<bool> {
+        use crate::tile::Suit;
+        use crate::game::blood_battle::BloodBattleRules;
+        
+        let suit_enum = match suit {
+            "Wan" => Suit::Wan,
+            "Tong" => Suit::Tong,
+            "Tiao" => Suit::Tiao,
+            _ => return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                format!("Invalid suit: {}. Must be 'Wan', 'Tong', or 'Tiao'", suit)
+            )),
+        };
+        
+        Ok(BloodBattleRules::declare_suit(player_id, suit_enum, &mut self.inner.state))
+    }
+
     /// 转换为字符串（用于调试）
     fn __repr__(&self) -> String {
         format!("PyGameEngine(turn={}, current_player={})",

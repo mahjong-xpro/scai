@@ -106,9 +106,13 @@ class SelfPlayWorker:
             
             # 选择最少的花色
             min_suit = min(suit_counts.items(), key=lambda x: x[1])[0]
-            # 使用 process_action 执行定缺（如果支持）
-            # 注意：这里假设可以通过某种方式设置定缺
-            # 如果 PyGameEngine 不支持，需要在 Rust 端添加 declare_suit 方法
+            # 执行定缺
+            try:
+                engine.declare_suit(player_id, min_suit)
+            except Exception as e:
+                print(f"Worker {self.worker_id}, Game {game_id}, Declare suit error: {e}")
+                # 如果定缺失败，使用默认值
+                engine.declare_suit(player_id, 'Wan')
         
         # 游戏主循环
         max_turns = 200
@@ -137,9 +141,11 @@ class SelfPlayWorker:
                     None,
                 )
                 # 检查摸牌结果
-                if isinstance(draw_result, dict) and draw_result.get('type') == 'error':
-                    # 摸牌失败，可能是游戏结束
-                    break
+                if isinstance(draw_result, dict):
+                    if draw_result.get('type') == 'error':
+                        # 摸牌失败，可能是游戏结束
+                        break
+                    # 摸牌成功，继续处理
             except Exception as e:
                 print(f"Worker {self.worker_id}, Game {game_id}, Draw error: {e}")
                 # 如果摸牌失败，可能是游戏结束
@@ -193,6 +199,10 @@ class SelfPlayWorker:
             log_prob = np.log(masked_policy[action_index] + 1e-8)
             value_np = value.cpu().numpy()[0, 0]
             
+            # 获取游戏状态信息（用于奖励计算）
+            is_ready = state.is_player_ready(current_player)
+            is_hu = False  # 将在动作执行后更新
+            
             # 记录轨迹
             trajectory['states'].append(state_tensor)
             trajectory['actions'].append(int(action_index))
@@ -219,8 +229,13 @@ class SelfPlayWorker:
                 if isinstance(result, dict) and result.get('type') == 'won':
                     # 游戏结束
                     trajectory['dones'][-1] = True
-                    # 计算最终得分（简化处理）
-                    final_score = 0.0  # 需要从结算结果中提取
+                    is_hu = True
+                    
+                    # 从结算结果中提取最终得分
+                    settlement_str = result.get('settlement', '')
+                    final_score = self._extract_final_score_from_settlement(
+                        settlement_str, current_player
+                    )
                     trajectory['final_score'] = final_score
                     break
                 
@@ -228,27 +243,38 @@ class SelfPlayWorker:
                 print(f"Worker {self.worker_id}, Game {game_id}, Turn {turn_count} error: {e}")
                 # 如果动作失败，跳过这个回合
                 continue
+            
+            # 计算奖励（在动作执行后，可以获取最新状态）
+            # 更新状态以获取最新信息
+            state = engine.state
+            is_ready_after = state.is_player_ready(current_player)
+            is_flower_pig = self._check_flower_pig(state, current_player)
+            
+            # 计算奖励
+            reward = self.reward_shaping.compute_step_reward(
+                is_ready=is_ready_after,
+                is_hu=is_hu,
+                is_flower_pig=is_flower_pig,
+            )
+            trajectory['rewards'].append(reward)
         
         # 如果游戏正常结束，设置最后一个时间步的 done 标志
         if len(trajectory['dones']) > 0 and not trajectory['dones'][-1]:
             trajectory['dones'][-1] = True
         
-        # 计算每步奖励
-        for i in range(len(trajectory['states'])):
-            # 简化处理：根据游戏状态计算奖励
-            # 实际应该从游戏状态中获取听牌、胡牌等信息
-            reward = self.reward_shaping.compute_step_reward(
-                is_ready=False,
-                is_hu=False,
-                is_flower_pig=False,
-            )
-            trajectory['rewards'].append(reward)
+        # 确保奖励数量与状态数量一致
+        # 注意：奖励已经在动作执行后计算并添加，这里只需要确保数量一致
+        while len(trajectory['rewards']) < len(trajectory['states']):
+            # 如果缺少奖励，使用默认值
+            trajectory['rewards'].append(0.0)
         
-        # 添加最终奖励
+        # 添加最终奖励（如果有最终得分）
         if trajectory['final_score'] != 0.0:
+            # 判断是否获胜（得分 > 0 表示获胜）
+            is_winner = trajectory['final_score'] > 0
             final_reward = self.reward_shaping.compute_final_reward(
                 trajectory['final_score'],
-                is_winner=False,  # 需要从结算结果中判断
+                is_winner=is_winner,
             )
             if len(trajectory['rewards']) > 0:
                 trajectory['rewards'][-1] += final_reward
@@ -295,6 +321,74 @@ class SelfPlayWorker:
         else:
             # 摸牌（Draw）
             return "draw", None, None
+    
+    def _extract_final_score_from_settlement(
+        self,
+        settlement_str: str,
+        player_id: int,
+    ) -> float:
+        """
+        从结算结果字符串中提取最终得分
+        
+        参数：
+        - settlement_str: 结算结果字符串（格式化的字典字符串）
+        - player_id: 玩家 ID
+        
+        返回：
+        - 最终得分
+        """
+        # 简化处理：从结算结果中解析得分
+        # 实际实现需要解析 SettlementResult 结构
+        # 这里使用占位符，实际应该解析 settlement_str
+        try:
+            # 尝试从字符串中提取数字
+            # 注意：这是一个简化实现，实际应该解析完整的结算结果
+            import re
+            # 查找玩家 ID 对应的得分
+            # 格式可能是：payments: {player_id: score}
+            pattern = rf'{player_id}:\s*([+-]?\d+)'
+            match = re.search(pattern, settlement_str)
+            if match:
+                return float(match.group(1))
+        except Exception as e:
+            print(f"Error extracting final score: {e}")
+        
+        # 如果解析失败，返回 0
+        return 0.0
+    
+    def _check_flower_pig(
+        self,
+        state,
+        player_id: int,
+    ) -> bool:
+        """
+        检查玩家是否成为花猪（未打完缺门）
+        
+        参数：
+        - state: 游戏状态
+        - player_id: 玩家 ID
+        
+        返回：
+        - 是否是花猪
+        """
+        try:
+            # 获取玩家定缺花色
+            declared_suit_str = state.get_player_declared_suit(player_id)
+            if declared_suit_str is None:
+                return False  # 未定缺，不算花猪
+            
+            # 获取玩家手牌
+            hand = state.get_player_hand(player_id)
+            
+            # 检查手牌中是否还有定缺花色的牌
+            for tile_str, count in hand.items():
+                if declared_suit_str in tile_str and count > 0:
+                    return True  # 还有定缺花色的牌，是花猪
+            
+            return False  # 定缺花色已打完，不是花猪
+        except Exception as e:
+            print(f"Error checking flower pig: {e}")
+            return False
     
     def collect_trajectories(
         self,
