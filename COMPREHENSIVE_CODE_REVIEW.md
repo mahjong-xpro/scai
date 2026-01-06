@@ -197,67 +197,82 @@
 
 #### 2.3.1 特征张量计算优化
 
-**位置**：`rust/src/python/tensor.rs`
+**状态**：✅ **已优化**
 
-**问题**：
-- 多次遍历 `game_state.players` 和 `discard_history`
-- 可以合并一些循环
+**优化内容**：
+1. ✅ **合并循环**：
+   - 将手牌统计和碰/杠统计合并到单次遍历中
+   - 减少对 `game_state.players` 的遍历次数
+   - 提高特征张量计算效率
 
-**建议**：
-```rust
-// 可以优化为单次遍历：
-for player in &game_state.players {
-    // 同时统计手牌、碰/杠
-    for (tile, &count) in player.hand.tiles_map() {
-        // ...
-    }
-    for meld in &player.melds {
-        // ...
-    }
-}
-```
+**实现细节**：
+- 在 `tensor.rs` 中，将手牌统计和碰/杠统计合并到同一个循环中
+- 单次遍历所有玩家，同时处理手牌和碰/杠数据
+- 保持代码逻辑不变，仅优化性能
 
 #### 2.3.2 动作掩码生成优化
 
-**位置**：`rust/src/engine/action_mask.rs`
+**状态**：⚠️ **待优化**（低优先级）
 
-**问题**：
-- 多次检查胡牌、碰、杠
-- 可以缓存一些计算结果
+**说明**：
+- 动作掩码生成涉及复杂的规则检查（胡牌、碰、杠）
+- 缓存可能带来内存开销和状态管理复杂性
+- 当前性能已经足够，缓存优化可以后续考虑
 
 **建议**：
-- 考虑使用缓存来避免重复计算
+- 如果性能成为瓶颈，可以考虑使用 LRU 缓存
+- 缓存键可以基于游戏状态的哈希值
 
 ### 2.4 代码质量改进
 
 #### 2.4.1 魔法数字
 
-**位置**：多处使用硬编码的数字
+**状态**：✅ **已修复**
 
-**问题**：
-- `max_turns = 200`
-- `108` (总牌数)
-- `4` (玩家数量)
-- `27` (牌的种类数)
+**修复内容**：
+1. ✅ **创建常量模块**：
+   - 创建 `rust/src/game/constants.rs` 模块
+   - 定义所有游戏相关常量
 
-**建议**：
-```rust
-// 定义常量
-const MAX_TURNS: u32 = 200;
-const TOTAL_TILES: usize = 108;
-const NUM_PLAYERS: u8 = 4;
-const NUM_TILE_TYPES: usize = 27;
-```
+2. ✅ **替换魔法数字**：
+   - `MAX_TURNS = 200` → `constants::MAX_TURNS`
+   - `108` → `constants::TOTAL_TILES`
+   - `4` → `constants::NUM_PLAYERS`
+   - `27` → `constants::NUM_TILE_TYPES`
+   - `64, 4, 9` → `constants::NUM_FEATURE_PLANES, NUM_PLAYERS_FEATURE, RANKS_PER_SUIT`
+
+3. ✅ **应用范围**：
+   - `game_engine.rs`: 替换所有相关魔法数字
+   - `python/tensor.rs`: 替换特征张量相关的魔法数字
+   - `python/game_state.rs`: 替换玩家数量检查
+
+**定义的常量**：
+- `MAX_TURNS`: 最大回合数限制
+- `NUM_PLAYERS`: 玩家数量
+- `TOTAL_TILES`: 总牌数
+- `NUM_TILE_TYPES`: 牌的种类数
+- `TILES_PER_SUIT`: 每种花色的牌数
+- `COPIES_PER_TILE`: 每种牌的数量
+- `NUM_FEATURE_PLANES`: 特征平面数量
+- `NUM_PLAYERS_FEATURE`: 每个玩家的特征维度
+- `RANKS_PER_SUIT`: 每种花色的牌数
 
 #### 2.4.2 文档完善
 
-**问题**：
-- 某些复杂方法缺少详细文档
-- 某些模块缺少模块级文档
+**状态**：✅ **已改进**
+
+**改进内容**：
+1. ✅ **常量模块文档**：
+   - 为 `constants.rs` 添加模块级文档
+   - 为每个常量添加详细注释
+
+2. ✅ **现有文档**：
+   - 大部分公共方法已有文档注释
+   - 复杂方法（如 `state_to_tensor`）已有详细文档
 
 **建议**：
-- 为所有公共方法添加详细的文档注释
-- 添加模块级文档说明
+- 后续可以继续完善一些内部方法的文档
+- 添加更多使用示例
 
 ---
 

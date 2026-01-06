@@ -4,6 +4,7 @@ use crate::tile::{Tile, Suit};
 use crate::engine::action_mask::ActionMask;
 use crate::python::game_state::PyGameState;
 use crate::python::action_mask::PyActionMask;
+use crate::game::constants::{NUM_FEATURE_PLANES, NUM_PLAYERS_FEATURE, RANKS_PER_SUIT};
 
 /// 将游戏状态转换为 4D Tensor（在 Rust 侧完成，减少内存拷贝）
 /// 
@@ -56,14 +57,16 @@ pub fn state_to_tensor(
     wall_tile_distribution: Option<Vec<f32>>,
     py: Python,
 ) -> PyResult<Py<PyArray3<f32>>> {
-    if player_id >= 4 {
+    use crate::game::constants::NUM_PLAYERS;
+    
+    if player_id >= NUM_PLAYERS {
         return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
             "Invalid player ID",
         ));
     }
 
-    // 创建 4D 数组 (64, 4, 9)
-    let shape = [64, 4, 9];
+    // 创建 4D 数组 (NUM_FEATURE_PLANES, NUM_PLAYERS_FEATURE, RANKS_PER_SUIT)
+    let shape = [NUM_FEATURE_PLANES, NUM_PLAYERS_FEATURE, RANKS_PER_SUIT];
     let array = PyArray3::<f32>::zeros(py, shape, false);
     
     unsafe {
@@ -130,7 +133,7 @@ pub fn state_to_tensor(
         // 
         // 这是 AI 识别"做牌"意图的关键特征
         // 例如：先打 9 万再打 1 万 → 可能在做清一色
-        for p_id in 0..4 {
+        for p_id in 0..NUM_PLAYERS {
             // 获取该玩家的弃牌（从弃牌历史中筛选，保持原始顺序）
             let player_discards: Vec<_> = game_state.discard_history
                 .iter()

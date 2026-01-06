@@ -1,6 +1,7 @@
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
 use crate::game::state::GameState;
+use crate::game::constants::NUM_PLAYERS;
 
 /// Python 绑定的游戏状态
 #[pyclass]
@@ -44,7 +45,7 @@ impl PyGameState {
 
     /// 获取玩家手牌（返回 Python 字典）
     fn get_player_hand(&self, player_id: u8, py: Python) -> PyResult<PyObject> {
-        if player_id >= 4 {
+        if player_id >= NUM_PLAYERS {
             return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
                 "Invalid player ID",
             ));
@@ -72,7 +73,7 @@ impl PyGameState {
     /// 
     /// 是否成功设置
     fn set_player_hand(&mut self, player_id: u8, hand_dict: &PyDict) -> PyResult<bool> {
-        if player_id >= 4 {
+        if player_id >= NUM_PLAYERS {
             return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
                 "Invalid player ID",
             ));
@@ -154,7 +155,7 @@ impl PyGameState {
 
     /// 获取玩家定缺花色
     fn get_player_declared_suit(&self, player_id: u8) -> PyResult<Option<String>> {
-        if player_id >= 4 {
+        if player_id >= NUM_PLAYERS {
             return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
                 "Invalid player ID",
             ));
@@ -175,7 +176,7 @@ impl PyGameState {
     /// 
     /// 是否成功设置
     fn set_player_declared_suit(&mut self, player_id: u8, suit: &str) -> PyResult<bool> {
-        if player_id >= 4 {
+        if player_id >= NUM_PLAYERS {
             return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
                 "Invalid player ID",
             ));
@@ -198,7 +199,7 @@ impl PyGameState {
 
     /// 检查玩家是否已离场
     fn is_player_out(&self, player_id: u8) -> PyResult<bool> {
-        if player_id >= 4 {
+        if player_id >= NUM_PLAYERS {
             return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
                 "Invalid player ID",
             ));
@@ -209,7 +210,7 @@ impl PyGameState {
 
     /// 检查玩家是否听牌
     fn is_player_ready(&self, player_id: u8) -> PyResult<bool> {
-        if player_id >= 4 {
+        if player_id >= NUM_PLAYERS {
             return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
                 "Invalid player ID",
             ));
@@ -220,7 +221,7 @@ impl PyGameState {
 
     /// 获取玩家已碰/杠的牌组
     fn get_player_melds(&self, player_id: u8, py: Python) -> PyResult<PyObject> {
-        if player_id >= 4 {
+        if player_id >= NUM_PLAYERS {
             return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
                 "Invalid player ID",
             ));
@@ -284,7 +285,7 @@ impl PyGameState {
     ) -> PyResult<Vec<f32>> {
         use crate::python::tensor::state_to_tensor;
         
-        if player_id >= 4 {
+        if player_id >= NUM_PLAYERS {
             return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
                 "Invalid player ID",
             ));

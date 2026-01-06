@@ -7,6 +7,7 @@ use crate::game::blood_battle::BloodBattleRules;
 use crate::tile::win_check::WinChecker;
 use crate::game::settlement::GangSettlement;
 use crate::game::payment::{PaymentTracker, PaymentReason, InstantPayment};
+use crate::game::constants::{MAX_TURNS, NUM_PLAYERS};
 use std::collections::HashMap;
 
 /// 游戏引擎错误
@@ -87,7 +88,7 @@ impl GameEngine {
     /// 
     /// 动作处理结果
     pub fn process_action(&mut self, player_id: u8, action: Action) -> Result<ActionResult, GameError> {
-        if player_id >= 4 {
+        if player_id >= NUM_PLAYERS {
             return Err(GameError::InvalidPlayer);
         }
 
@@ -330,7 +331,7 @@ impl GameEngine {
         self.initialize()?;
         
         // 2. 定缺阶段（所有玩家必须定缺）
-        for i in 0..4u8 {
+        for i in 0..NUM_PLAYERS {
             // 检查是否已经定缺
             if self.state.players[i as usize].declared_suit.is_some() {
                 continue;
@@ -355,7 +356,7 @@ impl GameEngine {
         }
         
         // 3. 游戏主循环
-        let mut max_turns = 200; // 最大回合数限制，防止无限循环
+        let mut max_turns = MAX_TURNS; // 最大回合数限制，防止无限循环
         
         while !self.state.is_game_over() && max_turns > 0 {
             max_turns -= 1;
