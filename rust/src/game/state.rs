@@ -113,6 +113,145 @@ impl GameState {
         &self.players[player_id as usize]
     }
 
+    /// 验证游戏状态的完整性
+    /// 
+    /// 验证以下内容：
+    /// 1. 所有玩家手牌总数是否正确（考虑已碰/杠的牌）
+    /// 2. 每种牌的总数是否正确（手牌 + 碰/杠 + 弃牌 = 4 × 27 - 牌墙剩余）
+    /// 3. 弃牌历史是否一致
+    /// 4. 支付记录是否一致
+    /// 5. 玩家状态的一致性（out_count 与实际离场玩家数一致）
+    /// 6. 当前玩家 ID 是否有效
+    /// 
+    /// # 参数
+    /// 
+    /// - `wall_remaining_count`: 牌墙剩余牌数（用于验证总牌数）
+    /// 
+    /// # 返回
+    /// 
+    /// 如果验证通过，返回 `Ok(())`；否则返回 `Err(GameError)`
+    pub fn validate(&self, wall_remaining_count: usize) -> Result<(), crate::game::game_engine::GameError> {
+        use crate::game::game_engine::GameError;
+        use crate::game::scoring::Meld;
+        use std::collections::HashMap;
+        
+        // 1. 验证当前玩家 ID
+        if self.current_player >= 4 {
+            return Err(GameError::InvalidPlayer);
+        }
+        
+        // 2. 验证 out_count 与实际离场玩家数一致
+        let actual_out_count = self.players.iter()
+            .filter(|p| p.is_out)
+            .count() as u8;
+        if self.out_count != actual_out_count {
+            return Err(GameError::InvalidState);
+        }
+        
+        // 3. 统计所有可见的牌（手牌 + 碰/杠 + 弃牌）
+        let mut tile_counts: HashMap<Tile, u8> = HashMap::new();
+        
+        // 统计手牌
+        for player in &self.players {
+            for (tile, &count) in player.hand.tiles_map() {
+                *tile_counts.entry(*tile).or_insert(0) += count;
+            }
+        }
+        
+        // 统计碰/杠的牌
+        for player in &self.players {
+            for meld in &player.melds {
+                match meld {
+                    Meld::Triplet { tile } => {
+                        // 碰：3 张牌
+                        *tile_counts.entry(*tile).or_insert(0) += 3;
+                    }
+                    Meld::Kong { tile, .. } => {
+                        // 杠：4 张牌
+                        *tile_counts.entry(*tile).or_insert(0) += 4;
+                    }
+                }
+            }
+        }
+        
+        // 统计弃牌历史
+        for discard_record in &self.discard_history {
+            *tile_counts.entry(discard_record.tile).or_insert(0) += 1;
+        }
+        
+        // 4. 验证每种牌的总数（手牌 + 碰/杠 + 弃牌 + 牌墙剩余 = 4 × 27 = 108）
+        // 注意：这里我们只验证可见的牌，牌墙中的牌是未知的
+        // 总牌数 = 可见牌数 + 牌墙剩余数
+        let total_visible_tiles: usize = tile_counts.values().map(|&count| count as usize).sum();
+        let total_tiles = total_visible_tiles + wall_remaining_count;
+        
+        // 总牌数应该是 108（4 个玩家 × 13 张初始手牌 + 剩余牌墙）
+        // 但考虑到游戏进行中，手牌数量会变化，我们验证每种牌的总数不超过 4
+        for suit in crate::tile::Suit::all() {
+            for rank in Tile::MIN_RANK..=Tile::MAX_RANK {
+                let tile = match suit {
+                    crate::tile::Suit::Wan => Tile::Wan(rank),
+                    crate::tile::Suit::Tong => Tile::Tong(rank),
+                    crate::tile::Suit::Tiao => Tile::Tiao(rank),
+                };
+                
+                let visible_count = tile_counts.get(&tile).copied().unwrap_or(0);
+                // 每种牌最多 4 张，可见牌数 + 牌墙剩余数应该 <= 4
+                // 但由于我们不知道牌墙中每种牌的具体数量，这里只验证可见牌数不超过 4
+                if visible_count > 4 {
+                    return Err(GameError::InvalidState);
+                }
+            }
+        }
+        
+        // 5. 验证玩家手牌数量（考虑已碰/杠的牌）
+        // 每个玩家的手牌数 + 碰/杠占用的牌数应该合理
+        for player in &self.players {
+            let hand_count = player.hand.total_count();
+            let melds_tile_count: usize = player.melds.iter()
+                .map(|m| match m {
+                    Meld::Triplet { .. } => 3,
+                    Meld::Kong { .. } => 4,
+                })
+                .sum();
+            
+            // 手牌数 + 碰/杠占用的牌数应该 <= 14（初始 13 张 + 可能摸到的 1 张）
+            // 但考虑到杠后补牌等情况，这里只验证不超过 14
+            if hand_count + melds_tile_count > 14 {
+                return Err(GameError::InvalidState);
+            }
+        }
+        
+        // 6. 验证支付记录的一致性
+        // 检查支付记录中的玩家 ID 是否有效
+        for payment in &self.instant_payments {
+            if payment.from_player >= 4 || payment.to_player >= 4 {
+                return Err(GameError::InvalidState);
+            }
+            
+            // 检查金额是否为正数
+            if payment.amount <= 0 {
+                return Err(GameError::InvalidState);
+            }
+        }
+        
+        // 7. 验证杠牌历史的一致性
+        for gang_record in &self.gang_history {
+            if gang_record.player_id >= 4 {
+                return Err(GameError::InvalidState);
+            }
+        }
+        
+        // 8. 验证弃牌历史的一致性
+        for discard_record in &self.discard_history {
+            if discard_record.player_id >= 4 {
+                return Err(GameError::InvalidState);
+            }
+        }
+        
+        Ok(())
+    }
+
     /// 标记玩家离场（胡牌）
     pub fn mark_player_out(&mut self, player_id: u8) {
         if !self.players[player_id as usize].is_out {

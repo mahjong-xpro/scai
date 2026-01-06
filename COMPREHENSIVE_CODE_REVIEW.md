@@ -418,21 +418,35 @@ pub enum GameError {
 
 ### 4.2 状态验证
 
-**问题**：
-- 缺少游戏状态的完整性验证
+**状态**：✅ **已实现**
 
-**建议**：
-```rust
-impl GameState {
-    pub fn validate(&self) -> Result<(), GameError> {
-        // 验证：
-        // 1. 所有玩家手牌总数是否正确
-        // 2. 弃牌历史是否一致
-        // 3. 支付记录是否一致
-        // ...
-    }
-}
-```
+**实现内容**：
+1. ✅ **实现 `GameState::validate` 方法**：
+   - 验证当前玩家 ID 是否有效
+   - 验证 `out_count` 与实际离场玩家数一致
+   - 验证每种牌的总数不超过 4（手牌 + 碰/杠 + 弃牌）
+   - 验证玩家手牌数量合理（手牌数 + 碰/杠占用的牌数 <= 14）
+   - 验证支付记录的一致性（玩家 ID 有效，金额为正数）
+   - 验证杠牌历史的一致性（玩家 ID 有效）
+   - 验证弃牌历史的一致性（玩家 ID 有效）
+
+2. ✅ **实现测试用例**：
+   - `test_validate_normal_state`：测试正常状态的验证
+   - `test_validate_invalid_current_player`：测试无效的当前玩家 ID
+   - `test_validate_out_count_mismatch`：测试 out_count 不一致
+   - `test_validate_invalid_payment_player_id`：测试支付记录中的无效玩家 ID
+   - `test_validate_invalid_payment_amount`：测试支付记录中的无效金额
+   - `test_validate_invalid_gang_history_player_id`：测试杠牌历史中的无效玩家 ID
+   - `test_validate_invalid_discard_history_player_id`：测试弃牌历史中的无效玩家 ID
+
+**验证内容**：
+- ✅ 当前玩家 ID 有效性
+- ✅ 离场玩家数量一致性
+- ✅ 牌数统计正确性（每种牌不超过 4 张）
+- ✅ 玩家手牌数量合理性
+- ✅ 支付记录一致性
+- ✅ 杠牌历史一致性
+- ✅ 弃牌历史一致性
 
 ### 4.3 日志系统
 
