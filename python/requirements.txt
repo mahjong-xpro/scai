@@ -17,4 +17,5 @@ tensorboard>=2.13.0  # 训练可视化
 # 大模型API（可选，根据需要选择）
 openai>=1.0.0  # OpenAI API
 anthropic>=0.18.0  # Anthropic API
+google-generativeai>=0.3.0  # Google Gemini API
 

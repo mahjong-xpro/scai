@@ -13,7 +13,7 @@ import os
 @dataclass
 class LLMCoachConfig:
     """大模型教练配置"""
-    # API类型：'openai', 'anthropic', 'custom'
+    # API类型：'openai', 'anthropic', 'gemini', 'custom'
     api_type: str = 'openai'
     # API密钥（从环境变量读取）
     api_key: Optional[str] = None
@@ -34,6 +34,8 @@ class LLMCoachConfig:
                 self.api_key = os.getenv('OPENAI_API_KEY')
             elif self.api_type == 'anthropic':
                 self.api_key = os.getenv('ANTHROPIC_API_KEY')
+            elif self.api_type == 'gemini':
+                self.api_key = os.getenv('GOOGLE_API_KEY') or os.getenv('GEMINI_API_KEY')
 
 
 class LLMCoach:
@@ -255,6 +257,8 @@ class LLMCoach:
             return self._call_openai(prompt)
         elif self.config.api_type == 'anthropic':
             return self._call_anthropic(prompt)
+        elif self.config.api_type == 'gemini':
+            return self._call_gemini(prompt)
         elif self.config.api_type == 'custom':
             return self._call_custom(prompt)
         else:

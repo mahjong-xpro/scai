@@ -11,6 +11,7 @@ from .logger import GameLogger, DecisionLog
 from .llm_interface import LLMCoach, LLMCoachConfig
 from .automation import TrainingMonitor, ReportGenerator
 from .curriculum import CurriculumLearning
+from .gemini_code_analyzer import GeminiCodeAnalyzer
 
 __all__ = [
     'GameLogger',
@@ -20,5 +21,6 @@ __all__ = [
     'TrainingMonitor',
     'ReportGenerator',
     'CurriculumLearning',
+    'GeminiCodeAnalyzer',
 ]
 

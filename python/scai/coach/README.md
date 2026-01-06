@@ -35,15 +35,21 @@ logger.finish_game(game_id=0)
 ```python
 from scai.coach import LLMCoach, LLMCoachConfig
 
-# 配置（支持OpenAI、Anthropic等）
+# 配置（支持OpenAI、Anthropic、Gemini等）
 config = LLMCoachConfig(
-    api_type='openai',
-    model_name='gpt-4',
-    api_key=os.getenv('OPENAI_API_KEY'),
+    api_type='openai',  # 或 'anthropic', 'gemini'
+    model_name='gpt-4',  # 或 'claude-3-opus', 'gemini-pro'
+    api_key=os.getenv('OPENAI_API_KEY'),  # 或 ANTHROPIC_API_KEY, GOOGLE_API_KEY
 )
 
 coach = LLMCoach(config)
 ```
+
+**支持的API类型**:
+- `openai`: OpenAI API (GPT-4, GPT-3.5等)
+- `anthropic`: Anthropic API (Claude系列)
+- `gemini`: Google Gemini API (gemini-pro, gemini-pro-vision等)
+- `custom`: 自定义API（需要实现）
 
 **策略分析**:
 ```python
@@ -137,9 +143,16 @@ if curriculum.should_advance_stage(performance_metrics):
 
 设置API密钥：
 ```bash
+# OpenAI
 export OPENAI_API_KEY="your-api-key"
-# 或
+
+# Anthropic
 export ANTHROPIC_API_KEY="your-api-key"
+
+# Google Gemini
+export GOOGLE_API_KEY="your-api-key"
+# 或
+export GEMINI_API_KEY="your-api-key"
 ```
 
 ## 注意事项
