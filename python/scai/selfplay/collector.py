@@ -9,8 +9,11 @@ from typing import List, Dict, Optional
 from collections import defaultdict
 
 from .worker import SelfPlayWorker, create_workers, collect_trajectories_parallel
+from .opponent_pool import OpponentPool
+from .feeding_games import FeedingGameConfig, FeedingGameGenerator
 from ..training.buffer import ReplayBuffer
 from ..training.reward_shaping import RewardShaping
+from ..utils.data_validator import DataValidator
 
 
 class DataCollector:
@@ -26,6 +29,8 @@ class DataCollector:
         num_workers: int = 100,
         num_games_per_worker: int = 10,
         use_oracle: bool = True,
+        validate_data: bool = True,
+        strict_validation: bool = False,
     ):
         """
         参数：
@@ -34,28 +39,121 @@ class DataCollector:
         - num_workers: Worker 数量（默认 100）
         - num_games_per_worker: 每个 Worker 运行的游戏数量（默认 10）
         - use_oracle: 是否使用 Oracle 特征（默认 True）
+        - validate_data: 是否验证数据（默认 True）
+        - strict_validation: 严格验证模式（默认 False，发现错误时只警告不抛出异常）
         """
         self.buffer = buffer
         self.reward_shaping = reward_shaping
         self.num_workers = num_workers
         self.num_games_per_worker = num_games_per_worker
         self.use_oracle = use_oracle
+        self.validate_data = validate_data
+        
+        # 数据验证器
+        if self.validate_data:
+            self.validator = DataValidator(
+                state_shape=(64, 4, 9),  # 特征张量形状
+                action_space_size=434,
+                strict_mode=strict_validation,
+            )
+        else:
+            self.validator = None
+        
+        # 对手池（可选）
+        self.opponent_pool = None
+        self.use_opponent_pool = False
+        
+        # 喂牌机制（可选）
+        self.feeding_config = None
+        self.use_feeding = False
         
         # Worker 列表
         self.workers = None
     
-    def initialize_workers(self):
-        """初始化 Worker"""
+    def initialize_workers(self, use_feeding: bool = False):
+        """初始化 Worker
+        
+        参数：
+        - use_feeding: 是否使用喂牌模式
+        """
         if self.workers is None:
             self.workers = create_workers(
                 num_workers=self.num_workers,
                 num_games_per_worker=self.num_games_per_worker,
                 use_oracle=self.use_oracle,
+                use_feeding=use_feeding,
+                feeding_config=self.feeding_config if self.use_feeding else None,
             )
+    
+    def enable_opponent_pool(
+        self,
+        checkpoint_dir: str = './checkpoints',
+        pool_size: int = 10,
+        selection_strategy: str = 'uniform',
+    ):
+        """
+        启用对手池系统
+        
+        参数：
+        - checkpoint_dir: Checkpoint 目录
+        - pool_size: 池大小
+        - selection_strategy: 选择策略
+        """
+        self.opponent_pool = OpponentPool(
+            checkpoint_dir=checkpoint_dir,
+            pool_size=pool_size,
+            selection_strategy=selection_strategy,
+        )
+        self.use_opponent_pool = True
+    
+    def enable_feeding_games(
+        self,
+        enabled: bool = True,
+        difficulty: str = 'easy',
+        feeding_rate: float = 0.8,
+        win_types: Optional[List[str]] = None,
+    ):
+        """
+        启用喂牌机制
+        
+        参数：
+        - enabled: 是否启用
+        - difficulty: 难度级别
+        - feeding_rate: 喂牌概率
+        - win_types: 要学习的胡牌类型列表
+        """
+        if enabled:
+            self.feeding_config = FeedingGameConfig(
+                enabled=True,
+                difficulty=difficulty,
+                feeding_rate=feeding_rate,
+                win_types=win_types or ['basic', 'seven_pairs'],
+            )
+            self.use_feeding = True
+        else:
+            self.use_feeding = False
+    
+    def add_model_to_pool(
+        self,
+        model,
+        iteration: int,
+        elo_rating: float = 1500.0,
+    ):
+        """
+        添加模型到对手池
+        
+        参数：
+        - model: 模型实例
+        - iteration: 迭代次数
+        - elo_rating: Elo 评分
+        """
+        if self.opponent_pool:
+            self.opponent_pool.add_model(model, iteration, elo_rating)
     
     def collect(
         self,
         model_state_dict: Dict,
+        current_iteration: Optional[int] = None,
     ) -> Dict[str, int]:
         """
         收集轨迹数据
@@ -78,8 +176,30 @@ class DataCollector:
         # 处理轨迹，添加到缓冲区
         num_trajectories = len(trajectories)
         total_steps = 0
+        valid_trajectories = 0
+        invalid_trajectories = 0
         
-        for trajectory in trajectories:
+        for traj_idx, trajectory in enumerate(trajectories):
+            # 验证轨迹（如果启用）
+            if self.validate_data and self.validator is not None:
+                is_valid, errors = self.validator.validate_trajectory(
+                    trajectory,
+                    trajectory_id=f"trajectory_{traj_idx}",
+                )
+                
+                if not is_valid:
+                    invalid_trajectories += 1
+                    # 在非严格模式下，只记录错误但继续处理
+                    if self.validator.strict_mode:
+                        # 严格模式：跳过无效轨迹
+                        continue
+                    else:
+                        # 非严格模式：记录警告但继续处理
+                        if errors:
+                            print(f"Warning: Trajectory {traj_idx} has {len(errors)} validation errors (continuing anyway)")
+                else:
+                    valid_trajectories += 1
+            
             # 更新奖励
             rewards = self.reward_shaping.update_rewards(
                 trajectory['rewards'],
@@ -106,11 +226,24 @@ class DataCollector:
         # 计算优势函数
         self.buffer.compute_advantages()
         
-        return {
+        result = {
             'num_trajectories': num_trajectories,
             'total_steps': total_steps,
             'buffer_size': self.buffer.size(),
         }
+        
+        # 添加验证统计（如果启用）
+        if self.validate_data and self.validator is not None:
+            validation_stats = self.validator.get_validation_stats()
+            result['validation'] = {
+                'valid_trajectories': validation_stats['valid_trajectories'],
+                'invalid_trajectories': validation_stats['invalid_trajectories'],
+                'valid_rate': validation_stats['valid_rate'],
+                'num_errors': len(validation_stats['errors']),
+                'num_warnings': len(validation_stats['warnings']),
+            }
+        
+        return result
     
     def collect_batch(
         self,

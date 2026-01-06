@@ -219,6 +219,26 @@ impl PyGameState {
         Ok(self.inner.players[player_id as usize].is_ready)
     }
 
+    /// 获取玩家的向听数
+    /// 
+    /// 向听数（Shanten Number）：表示当前手牌距离听牌还需要多少步
+    /// - 0: 已听牌
+    /// - 1: 一向听（差1张牌听牌）
+    /// - 2: 二向听（差2张牌听牌）
+    /// - 3+: 三向听及以上
+    fn get_player_shanten(&self, player_id: u8) -> PyResult<u8> {
+        if player_id >= NUM_PLAYERS {
+            return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                "Invalid player ID",
+            ));
+        }
+        
+        use crate::game::shanten::ShantenCalculator;
+        let player = &self.inner.players[player_id as usize];
+        let shanten = ShantenCalculator::calculate_shanten(&player.hand, &player.melds);
+        Ok(shanten)
+    }
+
     /// 获取玩家已碰/杠的牌组
     fn get_player_melds(&self, player_id: u8, py: Python) -> PyResult<PyObject> {
         if player_id >= NUM_PLAYERS {

@@ -32,6 +32,13 @@ use crate::game::constants::{NUM_FEATURE_PLANES, NUM_PLAYERS_FEATURE, RANKS_PER_
 /// - 先打 5 万，再打 5 万 → 可能在做七对（打掉多余的中张）
 /// - 先打 1 万，再打 9 万 → 可能在做全带幺（保留中张，打掉边张）
 /// 
+/// 向听数特征平面（关键特征，用于初期训练）：
+/// - Plane 43-46: 每个玩家的向听数（Shanten Number，归一化到 [0, 1]）
+///   - 0: 已听牌
+///   - 1-8: 一向听至八向听
+///   - 归一化：shanten / 8.0
+///   - 帮助AI在初期阶段理解手牌质量，学习"做牌"策略
+/// 
 /// Oracle 特征平面（仅训练时使用）：
 /// - Plane 31-42: 对手暗牌（手牌）- 仅在 use_oracle=true 时填充
 /// - Plane 63: 牌堆余牌分布汇总 - 仅在 use_oracle=true 时填充
@@ -322,6 +329,26 @@ pub fn state_to_tensor(
                         if plane_idx < 64 {
                             data[[plane_idx, suit, rank]] = 1.0;
                         }
+                    }
+                }
+            }
+            plane_idx += 1;
+        }
+        
+        // 平面 43-46: 向听数（Shanten Number）- **关键特征，用于初期训练**
+        // 向听数表示手牌距离听牌还需要多少步
+        // - 0: 已听牌
+        // - 1-8: 一向听至八向听
+        use crate::game::shanten::ShantenCalculator;
+        for p_id in 0..NUM_PLAYERS as usize {
+            let player = &game_state.players[p_id];
+            let shanten = ShantenCalculator::calculate_shanten(&player.hand, &player.melds);
+            // 归一化向听数到 [0, 1] 范围（除以 8，0 表示已听牌，1 表示八向听）
+            let normalized_shanten = (shanten as f32 / 8.0).min(1.0);
+            for suit in 0..3 {
+                for rank in 0..9 {
+                    if plane_idx < 64 {
+                        data[[plane_idx, suit, rank]] = normalized_shanten;
                     }
                 }
             }

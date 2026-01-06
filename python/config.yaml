@@ -1,0 +1,122 @@
+# 血战到底 AI 训练配置文件
+# Training Configuration for Blood Battle to the End Mahjong AI
+
+# 模型配置
+model:
+  input_channels: 64          # 特征平面数
+  action_space_size: 434       # 动作空间大小（108 出牌 + 108 碰 + 108 杠 + 108 胡 + 1 过 + 1 摸）
+  backbone:
+    num_blocks: 20             # ResNet 残差块数量
+    channels: 128              # 基础通道数
+  policy_head:
+    hidden_size: 512          # Policy Head 隐藏层大小
+  value_head:
+    hidden_size: 256          # Value Head 隐藏层大小
+
+# 训练配置
+training:
+  learning_rate: 3e-4          # 学习率
+  batch_size: 4096             # 批次大小
+  num_epochs: 10               # 每次更新的轮数
+  clip_epsilon: 0.2            # PPO 裁剪参数
+  value_coef: 0.5              # 价值损失系数
+  entropy_coef: 0.01          # 熵系数（鼓励探索）
+  max_grad_norm: 0.5           # 梯度裁剪阈值
+  buffer_capacity: 100000     # 经验回放缓冲区容量
+  num_iterations: 1000         # 训练迭代次数
+  collect_interval: 1          # 每 N 次迭代收集一次数据
+  save_interval: 100           # 每 N 次迭代保存一次 Checkpoint
+  
+  # 奖励函数配置
+  ready_reward: 0.1            # 听牌奖励
+  hu_reward: 1.0               # 胡牌奖励
+  flower_pig_penalty: -5.0     # 花猪惩罚
+  final_score_weight: 1.0      # 最终得分权重
+
+# 自对弈配置
+selfplay:
+  num_workers: 100              # Ray Worker 数量
+  games_per_worker: 10         # 每个 Worker 运行的游戏数量
+  oracle_enabled: true         # 是否启用 Oracle 特征（训练时使用）
+  validate_data: true          # 是否验证轨迹数据
+  strict_validation: false     # 严格验证模式（true: 发现错误时抛出异常，false: 只警告）
+
+# 评估配置
+evaluation:
+  elo_threshold: 0.55          # Elo 胜率阈值（55%）
+  num_eval_games: 100          # 评估时运行的游戏数量
+  eval_interval: 100           # 每 N 次迭代评估一次
+
+# Ray 配置
+ray:
+  init: true                    # 是否初始化 Ray
+  num_cpus: null               # CPU 数量（null 表示自动检测）
+  num_gpus: 0                  # GPU 数量（0 表示不使用 GPU）
+
+# Checkpoint 配置
+checkpoint_dir: ./checkpoints  # Checkpoint 保存目录
+
+# 日志配置
+logging:
+  log_dir: ./logs              # 日志文件保存目录
+  log_level: INFO              # 日志级别（DEBUG, INFO, WARNING, ERROR, CRITICAL）
+  use_json: false              # 是否使用 JSON 格式（false 使用文本格式）
+  console_output: true         # 是否输出到控制台
+  metrics_logging: true        # 是否记录训练指标
+
+# 可选：对抗训练配置
+adversarial:
+  enabled: false                # 是否启用对抗训练
+  frequency: 10                 # 每 N 次迭代进行一次对抗训练
+  scenarios_per_iteration: 5    # 每次对抗训练的 scenario 数量
+
+# 可选：超参数搜索配置
+hyperparameter_search:
+  enabled: false                # 是否启用超参数搜索
+  method: grid                  # 搜索方法（grid/random/bayesian）
+  num_trials: 20                # 试验次数
+
+# 对手池配置
+opponent_pool:
+  enabled: false                # 是否启用对手池
+  pool_size: 10                 # 池大小
+  selection_strategy: uniform   # 选择策略（uniform/weighted_by_elo/recent/diverse）
+  update_interval: 100          # 每 N 次迭代更新一次
+
+# 课程学习配置
+curriculum_learning:
+  enabled: false                # 是否启用课程学习
+  initial_stage: declare_suit   # 初始阶段（declare_suit/learn_win/basic/defensive/advanced/expert）
+  llm_coach_frequency: 100      # 每 N 次迭代生成一次课程规划文档
+  document_output_dir: ./coach_documents  # 文档输出目录
+  
+  # 喂牌机制配置
+  feeding_games:
+    enabled: true               # 是否启用喂牌机制
+    difficulty: easy           # 难度级别（easy/medium/hard）
+    feeding_rate: 0.2          # 喂牌概率（0.0-1.0），2:8比例即20%喂牌，80%随机
+    win_types:                 # 要学习的胡牌类型
+      - basic                  # 基本胡牌
+      - seven_pairs            # 七对
+      - pure_suit              # 清一色
+
+# 搜索增强推理配置
+search_enhanced_inference:
+  enabled: false                # 是否启用搜索增强推理
+  num_simulations: 100          # ISMCTS 模拟次数
+  exploration_constant: 1.41    # 探索常数（UCT）
+  determinization_samples: 10   # Determinization 采样次数
+  critical_decision_threshold: 0.8  # 关键决策阈值（价值函数方差）
+
+# 数据增强配置
+data_augmentation:
+  enabled: false                # 是否启用数据增强
+  suit_symmetry: true           # 花色对称性
+  rank_symmetry: true           # 数字对称性
+  position_rotation: true       # 玩家位置旋转
+  rotation_prob: 0.5            # 旋转概率
+  symmetry_prob: 0.5            # 对称性概率
+
+# 注意：LLM 教练功能已改为文档生成模式
+# 请使用 curriculum_learning 配置来生成分析文档
+

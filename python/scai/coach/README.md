@@ -1,12 +1,12 @@
-# 大模型总教练 (LLM Coach)
+# Coach 模块
 
-使用大模型监督和指导AI训练的系统。
+生成训练分析文档，供手动提交给大模型进行分析。
 
 ## 功能模块
 
 ### 1. 游戏日志记录器 (GameLogger)
 
-将关键决策点序列化为结构化JSON，用于大模型分析。
+将关键决策点序列化为结构化JSON，用于生成分析文档。
 
 **使用示例**:
 ```python
@@ -27,60 +27,53 @@ logger.log_decision(
 logger.finish_game(game_id=0)
 ```
 
-### 2. 大模型监督接口 (LLMCoach)
+### 2. 训练文档生成器 (TrainingDocumentGenerator)
 
-调用大模型API进行策略分析、奖励函数评价和课程学习规划。
+生成结构化的训练分析文档，包括策略分析、奖励函数评价和课程学习规划。
 
-**配置**:
+**使用示例**:
 ```python
-from scai.coach import LLMCoach, LLMCoachConfig
+from scai.coach import TrainingDocumentGenerator
 
-# 配置（支持OpenAI、Anthropic、Gemini等）
-config = LLMCoachConfig(
-    api_type='openai',  # 或 'anthropic', 'gemini'
-    model_name='gpt-4',  # 或 'claude-3-opus', 'gemini-pro'
-    api_key=os.getenv('OPENAI_API_KEY'),  # 或 ANTHROPIC_API_KEY, GOOGLE_API_KEY
+generator = TrainingDocumentGenerator(output_dir='./coach_documents')
+
+# 生成策略分析文档
+strategy_doc = generator.generate_strategy_analysis_document(
+    game_logs=game_logs,
+    performance_metrics={'win_rate': 0.5, 'avg_score': 10.0},
+    iteration=1000,
 )
 
-coach = LLMCoach(config)
-```
-
-**支持的API类型**:
-- `openai`: OpenAI API (GPT-4, GPT-3.5等)
-- `anthropic`: Anthropic API (Claude系列)
-- `gemini`: Google Gemini API (gemini-pro, gemini-pro-vision等)
-- `custom`: 自定义API（需要实现）
-
-**策略分析**:
-```python
-# 分析策略合理性
-analysis = coach.analyze_strategy(game_logs, focus_anomalies=True)
-print(analysis['issues'])  # 发现的问题
-print(analysis['suggestions'])  # 改进建议
-```
-
-**奖励函数评价**:
-```python
-# 评价奖励函数
-evaluation = coach.evaluate_reward_function(
+# 生成奖励函数评价文档
+reward_doc = generator.generate_reward_evaluation_document(
     reward_config={'ready_reward': 0.1, 'hu_reward': 1.0},
     loss_curve=[...],
     elo_scores=[...],
-    behavior_issues=['过度保守', '不敢博清一色'],
+    iteration=1000,
+)
+
+# 生成课程学习规划文档
+curriculum_doc = generator.generate_curriculum_design_document(
+    current_stage='基础阶段',
+    performance_metrics={'win_rate': 0.5},
+    issues=['过度保守', '不敢博清一色'],
+    iteration=1000,
 )
 ```
 
 ### 3. 自动化反馈机制 (TrainingMonitor)
 
-定期生成训练报告并调用大模型进行分析。
+定期生成训练报告和分析文档。
 
 **使用示例**:
 ```python
-from scai.coach import TrainingMonitor, ReportGenerator
+from scai.coach import TrainingMonitor, ReportGenerator, TrainingDocumentGenerator
+
+document_generator = TrainingDocumentGenerator(output_dir='./coach_documents')
 
 monitor = TrainingMonitor(
     logger=logger,
-    llm_coach=coach,
+    document_generator=document_generator,
     report_generator=ReportGenerator(),
     check_interval=1000,  # 每1000个epoch检查一次
 )
@@ -92,28 +85,29 @@ for iteration in range(num_iterations):
     # 更新指标
     monitor.update_metrics(loss=current_loss, elo_score=current_elo)
     
-    # 检查并分析
-    analysis = monitor.check_and_analyze(
+    # 检查并生成文档
+    doc_paths = monitor.check_and_generate_documents(
         iteration=iteration,
         training_stats=stats,
         reward_config=reward_config,
     )
     
-    if analysis:
-        # 根据分析结果调整训练参数
-        suggestions = analysis['strategy_analysis']['suggestions']
-        # ... 应用建议 ...
+    if doc_paths:
+        # 文档已生成，可以手动提交给大模型分析
+        print(f"策略分析文档: {doc_paths['strategy_analysis']}")
+        print(f"奖励函数评价文档: {doc_paths['reward_evaluation']}")
 ```
 
 ### 4. 课程学习规划 (CurriculumLearning)
 
-根据大模型的建议，设计分阶段的训练课程。
+设计分阶段的训练课程，生成课程规划文档。
 
 **使用示例**:
 ```python
-from scai.coach import CurriculumLearning
+from scai.coach import CurriculumLearning, TrainingDocumentGenerator, TrainingStage
 
-curriculum = CurriculumLearning(llm_coach=coach)
+document_generator = TrainingDocumentGenerator(output_dir='./coach_documents')
+curriculum = CurriculumLearning(document_generator=document_generator)
 
 # 获取当前课程
 current = curriculum.get_current_curriculum()
@@ -122,10 +116,11 @@ print(f"训练目标: {current.objectives}")
 
 # 检查是否应该进入下一阶段
 if curriculum.should_advance_stage(performance_metrics):
-    # 设计下一阶段
-    next_stage = curriculum.design_next_stage(
+    # 生成课程规划文档（供手动提交给大模型）
+    doc_path = curriculum.design_next_stage(
         performance_metrics=metrics,
         current_issues=['过度保守', '不敢博清一色'],
+        iteration=1000,
     )
     
     # 进入下一阶段
@@ -139,25 +134,28 @@ if curriculum.should_advance_stage(performance_metrics):
 3. **高级阶段 (ADVANCED)**: 学习博弈高阶策略
 4. **专家阶段 (EXPERT)**: 学习复杂策略组合
 
-## 环境变量
+## 工作流程
 
-设置API密钥：
-```bash
-# OpenAI
-export OPENAI_API_KEY="your-api-key"
+1. **训练过程中** - 系统自动生成分析文档
+2. **手动提交** - 将文档复制并提交给大模型（ChatGPT、Claude、Gemini等）
+3. **获取分析** - 大模型提供分析结果和建议
+4. **应用调整** - 根据分析结果手动调整训练参数
 
-# Anthropic
-export ANTHROPIC_API_KEY="your-api-key"
+## 文档格式
 
-# Google Gemini
-export GOOGLE_API_KEY="your-api-key"
-# 或
-export GEMINI_API_KEY="your-api-key"
-```
+生成的文档为 Markdown 格式，包含：
+- 性能指标概览
+- 详细游戏日志
+- 分析任务说明
+- 请求的分析结果格式
 
 ## 注意事项
 
-1. **数据抽样**: 不要发原始Tensor，要发人类可读的"牌谱"
-2. **关注异常值**: 专门把那些Loss极高或Elo分数突然下降的对局发给大模型分析
-3. **对抗性测试**: 让大模型出一些"死局"或"诱导局"给Rust引擎，看AI在这种特殊环境下的胜率
+1. **文档生成频率** - 建议设置为 50-200 次迭代，避免过于频繁
+2. **文档大小** - 系统会自动限制游戏日志数量，避免文档过大
+3. **手动处理** - 需要手动将文档提交给大模型，系统不会自动调用 API
+4. **结果应用** - 分析结果需要手动应用到配置文件中
 
+## 详细使用指南
+
+请参考 `python/COACH_MODULE_GUIDE.md` 获取详细的使用指南。

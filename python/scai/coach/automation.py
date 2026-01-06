@@ -1,7 +1,7 @@
 """
 自动化反馈机制 (Automation)
 
-定期生成训练报告并调用大模型进行分析。
+定期生成训练报告和文档，供手动提交给大模型进行分析。
 """
 
 import json
@@ -11,7 +11,7 @@ from datetime import datetime
 from pathlib import Path
 
 from .logger import GameLogger
-from .llm_interface import LLMCoach, LLMCoachConfig
+from .document_generator import TrainingDocumentGenerator
 
 
 class ReportGenerator:
@@ -100,25 +100,25 @@ class ReportGenerator:
 class TrainingMonitor:
     """训练监控器
     
-    定期监控训练过程，生成报告并调用大模型分析。
+    定期监控训练过程，生成报告和文档供手动分析。
     """
     
     def __init__(
         self,
         logger: GameLogger,
-        llm_coach: LLMCoach,
+        document_generator: TrainingDocumentGenerator,
         report_generator: ReportGenerator,
         check_interval: int = 1000,
     ):
         """
         参数：
         - logger: 游戏日志记录器
-        - llm_coach: 大模型教练
+        - document_generator: 文档生成器
         - report_generator: 报告生成器
         - check_interval: 检查间隔（每N个epoch检查一次）
         """
         self.logger = logger
-        self.llm_coach = llm_coach
+        self.document_generator = document_generator
         self.report_generator = report_generator
         self.check_interval = check_interval
         
@@ -147,14 +147,14 @@ class TrainingMonitor:
         if reward_config is not None:
             self.reward_config_history.append(reward_config)
     
-    def check_and_analyze(
+    def check_and_generate_documents(
         self,
         iteration: int,
         training_stats: Dict[str, Any],
         reward_config: Dict[str, Any],
-    ) -> Optional[Dict[str, Any]]:
+    ) -> Optional[Dict[str, str]]:
         """
-        检查是否需要分析，如果需要则调用大模型
+        检查是否需要生成文档，如果需要则生成分析文档
         
         参数：
         - iteration: 当前迭代次数
@@ -162,12 +162,12 @@ class TrainingMonitor:
         - reward_config: 奖励函数配置
         
         返回：
-        - 分析结果（如果进行了分析），否则返回None
+        - 文档路径字典（如果生成了文档），否则返回None
         """
         if iteration % self.check_interval != 0:
             return None
         
-        print(f"[TrainingMonitor] 迭代 {iteration}: 生成报告并调用大模型分析...")
+        print(f"[TrainingMonitor] 迭代 {iteration}: 生成报告和分析文档...")
         
         # 获取异常日志
         anomaly_logs = self.logger.get_anomaly_logs(
@@ -193,40 +193,54 @@ class TrainingMonitor:
             for game_logs in recent_logs
         ]
         
-        # 策略合理性审计
-        strategy_analysis = self.llm_coach.analyze_strategy(
-            game_logs_dict,
+        # 计算性能指标
+        performance_metrics = {
+            'iteration': iteration,
+            'avg_score': training_stats.get('avg_score', 0.0),
+            'win_rate': training_stats.get('win_rate', 0.0),
+            'elo_rating': self.elo_scores[-1] if self.elo_scores else 0.0,
+        }
+        
+        # 生成策略分析文档
+        strategy_doc_path = self.document_generator.generate_strategy_analysis_document(
+            game_logs=game_logs_dict,
+            performance_metrics=performance_metrics,
             focus_anomalies=True,
+            iteration=iteration,
         )
         
-        # 奖励函数评价
-        behavior_issues = strategy_analysis.get('issues', [])
-        reward_evaluation = self.llm_coach.evaluate_reward_function(
+        # 提取行为问题（从异常日志中）
+        behavior_issues = [
+            f"异常决策: {log.action_taken}, 奖励: {log.reward}"
+            for log in anomaly_logs[:5]
+        ]
+        
+        # 生成奖励函数评价文档
+        reward_doc_path = self.document_generator.generate_reward_evaluation_document(
             reward_config=reward_config,
             loss_curve=self.loss_history,
             elo_scores=self.elo_scores,
-            behavior_issues=behavior_issues[:3] if behavior_issues else None,
+            behavior_issues=behavior_issues if behavior_issues else None,
+            iteration=iteration,
         )
         
-        # 保存分析结果
-        analysis_result = {
-            'iteration': iteration,
-            'timestamp': datetime.now().isoformat(),
-            'strategy_analysis': strategy_analysis,
-            'reward_evaluation': reward_evaluation,
-            'report': report,
+        # 返回文档路径
+        doc_paths = {
+            'strategy_analysis': strategy_doc_path,
+            'reward_evaluation': reward_doc_path,
+            'report': os.path.join(
+                self.report_generator.report_dir,
+                f"report_{iteration:06d}.json"
+            ),
         }
         
-        analysis_path = os.path.join(
-            self.report_generator.report_dir,
-            f"analysis_{iteration:06d}.json"
-        )
-        with open(analysis_path, 'w', encoding='utf-8') as f:
-            json.dump(analysis_result, f, ensure_ascii=False, indent=2)
+        print(f"[TrainingMonitor] 文档生成完成:")
+        print(f"  - 策略分析文档: {strategy_doc_path}")
+        print(f"  - 奖励函数评价文档: {reward_doc_path}")
+        print(f"  - 训练报告: {doc_paths['report']}")
+        print(f"  请手动将这些文档提交给大模型进行分析。")
         
-        print(f"[TrainingMonitor] 分析完成，结果已保存到: {analysis_path}")
-        
-        return analysis_result
+        return doc_paths
     
     def get_latest_analysis(self) -> Optional[Dict[str, Any]]:
         """获取最新的分析结果"""

@@ -12,10 +12,9 @@ ray>=2.0.0  # 分布式并行框架
 
 # 工具库
 tqdm>=4.65.0  # 进度条
+pyyaml>=6.0  # YAML 配置文件解析
 tensorboard>=2.13.0  # 训练可视化
 
-# 大模型API（可选，根据需要选择）
-openai>=1.0.0  # OpenAI API
-anthropic>=0.18.0  # Anthropic API
-google-generativeai>=0.3.0  # Google Gemini API
+# 注意：Coach 模块已改为文档生成模式，不再需要大模型 API 依赖
+# 如需使用大模型分析，请手动将生成的文档提交给大模型
 

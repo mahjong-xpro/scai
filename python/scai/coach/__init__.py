@@ -1,26 +1,23 @@
 """
-大模型总教练 (LLM Coach)
+Coach 模块
 
-使用大模型监督和指导AI训练，包括：
-- 策略合理性审计
-- 奖励函数评价
-- 课程学习规划
+生成训练分析文档，供手动提交给大模型进行分析。
+包括：
+- 策略分析文档生成
+- 奖励函数评价文档生成
+- 课程学习规划文档生成
 """
 
 from .logger import GameLogger, DecisionLog
-from .llm_interface import LLMCoach, LLMCoachConfig
-from .automation import TrainingMonitor, ReportGenerator
-from .curriculum import CurriculumLearning
-from .gemini_code_analyzer import GeminiCodeAnalyzer
+from .document_generator import TrainingDocumentGenerator
+from .curriculum import CurriculumLearning, TrainingStage, CurriculumStep
 
 __all__ = [
     'GameLogger',
     'DecisionLog',
-    'LLMCoach',
-    'LLMCoachConfig',
-    'TrainingMonitor',
-    'ReportGenerator',
+    'TrainingDocumentGenerator',
     'CurriculumLearning',
-    'GeminiCodeAnalyzer',
+    'TrainingStage',
+    'CurriculumStep',
 ]
 

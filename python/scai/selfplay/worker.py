@@ -7,8 +7,9 @@
 import ray
 import numpy as np
 import torch
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Any
 import time
+import random
 
 # 注意：需要先安装 Ray: pip install ray
 
@@ -38,6 +39,9 @@ class SelfPlayWorker:
         num_games: int = 10,
         use_oracle: bool = True,
         device: str = 'cpu',
+        ismcts: Optional[Any] = None,
+        use_search_enhanced: bool = False,
+        critical_decision_threshold: float = 0.8,
     ):
         """
         参数：
@@ -45,17 +49,34 @@ class SelfPlayWorker:
         - num_games: 每个 Worker 运行的游戏数量（默认 10）
         - use_oracle: 是否使用 Oracle 特征（默认 True）
         - device: 设备（'cpu' 或 'cuda'，默认 'cpu'）
+        - ismcts: ISMCTS 搜索器（可选）
+        - use_search_enhanced: 是否使用搜索增强推理（默认 False）
+        - critical_decision_threshold: 关键决策阈值（默认 0.8）
         """
         self.worker_id = worker_id
         self.num_games = num_games
         self.use_oracle = use_oracle
         self.device = device
+        self.ismcts = ismcts
+        self.use_search_enhanced = use_search_enhanced and ismcts is not None
+        self.critical_decision_threshold = critical_decision_threshold
+        self.use_feeding = use_feeding
+        self.feeding_config = feeding_config
         
         # 初始化 Rust 引擎
         self.engine = scai_engine.PyGameEngine()
         
         # 初始化奖励函数
         self.reward_shaping = RewardShaping()
+        
+        # 初始化喂牌生成器（如果启用）
+        if self.use_feeding and self.feeding_config:
+            from .feeding_games import FeedingGameGenerator
+            self.feeding_generator = FeedingGameGenerator(
+                difficulty=self.feeding_config.difficulty
+            )
+        else:
+            self.feeding_generator = None
     
     def play_game(
         self,
@@ -75,6 +96,40 @@ class SelfPlayWorker:
         # 初始化游戏引擎
         engine = scai_engine.PyGameEngine()
         engine.initialize()
+        
+        # 喂牌机制：如果启用，生成喂牌牌局
+        if self.use_feeding and self.feeding_generator and self.feeding_config:
+            # 使用配置中的 feeding_rate（2:8 比例，即 20% 喂牌，80% 随机）
+            should_feed = random.random() < self.feeding_config.feeding_rate
+            if should_feed:
+                try:
+                    # 选择胡牌类型
+                    win_type = 'basic'
+                    if self.feeding_config and self.feeding_config.win_types:
+                        win_type = random.choice(self.feeding_config.win_types)
+                    
+                    # 生成喂牌游戏（给玩家0，即AI玩家）
+                    feeding_engine = self.feeding_generator.create_feeding_game(
+                        target_player_id=0,
+                        win_type=win_type,
+                    )
+                    
+                    if feeding_engine is not None:
+                        # 使用喂牌引擎替换正常引擎
+                        engine = feeding_engine
+                        # 记录这是喂牌局（用于统计）
+                        is_feeding_game = True
+                    else:
+                        # 如果生成失败，使用正常牌局
+                        is_feeding_game = False
+                except Exception as e:
+                    # 如果喂牌失败，继续使用正常牌局
+                    print(f"Worker {self.worker_id}, Game {game_id}, Feeding game error: {e}")
+                    is_feeding_game = False
+            else:
+                is_feeding_game = False
+        else:
+            is_feeding_game = False
         
         trajectory = {
             'states': [],
@@ -176,28 +231,59 @@ class SelfPlayWorker:
             state_tensor_torch = torch.from_numpy(state_tensor).float().unsqueeze(0).to(self.device)
             action_mask_torch = torch.from_numpy(np.array(action_mask, dtype=np.float32)).float().unsqueeze(0).to(self.device)
             
-            # 模型推理
-            model.eval()
-            with torch.no_grad():
-                policy, value = model(state_tensor_torch, action_mask_torch)
+            # 判断是否使用搜索增强推理
+            use_search = False
+            if self.use_search_enhanced:
+                # 计算价值函数的方差（简化：使用 policy 的熵作为不确定性指标）
+                model.eval()
+                with torch.no_grad():
+                    policy, value = model(state_tensor_torch, action_mask_torch)
+                
+                policy_np = policy.cpu().numpy()[0]
+                # 计算熵（不确定性）
+                entropy = -np.sum(policy_np * np.log(policy_np + 1e-8))
+                # 如果熵高（不确定性大），使用搜索
+                max_entropy = np.log(len(policy_np))  # 最大熵
+                uncertainty = entropy / max_entropy
+                use_search = uncertainty > self.critical_decision_threshold
             
-            # 采样动作
-            policy_np = policy.cpu().numpy()[0]
-            action_mask_np = action_mask_torch.cpu().numpy()[0]
+            if use_search and self.ismcts is not None:
+                # 使用 ISMCTS 搜索
+                try:
+                    action_index, log_prob, value_np = self.ismcts.search(
+                        game_state=state,
+                        model=model,
+                        action_mask=action_mask,
+                        current_player=current_player,
+                    )
+                except Exception as e:
+                    # 如果搜索失败，回退到普通推理
+                    print(f"Worker {self.worker_id}, ISMCTS search failed: {e}, falling back to normal inference")
+                    use_search = False
             
-            # 应用动作掩码
-            masked_policy = policy_np * action_mask_np
-            masked_policy_sum = masked_policy.sum()
-            if masked_policy_sum > 1e-8:
-                masked_policy = masked_policy / masked_policy_sum
-            else:
-                # 如果没有合法动作，使用均匀分布
-                masked_policy = action_mask_np / (action_mask_np.sum() + 1e-8)
-            
-            # 采样动作
-            action_index = np.random.choice(len(masked_policy), p=masked_policy)
-            log_prob = np.log(masked_policy[action_index] + 1e-8)
-            value_np = value.cpu().numpy()[0, 0]
+            if not use_search:
+                # 普通模型推理
+                model.eval()
+                with torch.no_grad():
+                    policy, value = model(state_tensor_torch, action_mask_torch)
+                
+                # 采样动作
+                policy_np = policy.cpu().numpy()[0]
+                action_mask_np = action_mask_torch.cpu().numpy()[0]
+                
+                # 应用动作掩码
+                masked_policy = policy_np * action_mask_np
+                masked_policy_sum = masked_policy.sum()
+                if masked_policy_sum > 1e-8:
+                    masked_policy = masked_policy / masked_policy_sum
+                else:
+                    # 如果没有合法动作，使用均匀分布
+                    masked_policy = action_mask_np / (action_mask_np.sum() + 1e-8)
+                
+                # 采样动作
+                action_index = np.random.choice(len(masked_policy), p=masked_policy)
+                log_prob = np.log(masked_policy[action_index] + 1e-8)
+                value_np = value.cpu().numpy()[0, 0]
             
             # 记录轨迹（在动作执行前）
             trajectory['states'].append(state_tensor)
@@ -458,6 +544,11 @@ def create_workers(
     num_workers: int = 100,
     num_games_per_worker: int = 10,
     use_oracle: bool = True,
+    ismcts: Optional[Any] = None,
+    use_search_enhanced: bool = False,
+    critical_decision_threshold: float = 0.8,
+    use_feeding: bool = False,
+    feeding_config: Optional[Any] = None,
 ) -> List:
     """
     创建多个 Worker
@@ -466,6 +557,11 @@ def create_workers(
     - num_workers: Worker 数量（默认 100）
     - num_games_per_worker: 每个 Worker 运行的游戏数量（默认 10）
     - use_oracle: 是否使用 Oracle 特征（默认 True）
+    - ismcts: ISMCTS 搜索器（可选）
+    - use_search_enhanced: 是否使用搜索增强推理（默认 False）
+    - critical_decision_threshold: 关键决策阈值（默认 0.8）
+    - use_feeding: 是否使用喂牌模式（默认 False）
+    - feeding_config: 喂牌配置（可选）
     
     返回：
     - Worker 列表
@@ -476,6 +572,11 @@ def create_workers(
             worker_id=i,
             num_games=num_games_per_worker,
             use_oracle=use_oracle,
+            ismcts=ismcts,  # 注意：Ray 可能无法序列化 ISMCTS，需要特殊处理
+            use_search_enhanced=use_search_enhanced,
+            critical_decision_threshold=critical_decision_threshold,
+            use_feeding=use_feeding,
+            feeding_config=feeding_config,
         )
         workers.append(worker)
     

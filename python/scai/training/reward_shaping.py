@@ -20,6 +20,8 @@ class RewardShaping:
         hu_reward: float = 1.0,
         flower_pig_penalty: float = -5.0,
         final_score_weight: float = 1.0,
+        shanten_reward_weight: float = 0.05,  # 向听数奖励权重（用于初期训练）
+        use_shanten_reward: bool = True,  # 是否使用向听数奖励（初期阶段启用）
     ):
         """
         参数：
@@ -27,17 +29,23 @@ class RewardShaping:
         - hu_reward: 胡牌奖励（默认 1.0）
         - flower_pig_penalty: 花猪惩罚（默认 -5.0）
         - final_score_weight: 最终得分权重（默认 1.0）
+        - shanten_reward_weight: 向听数奖励权重（默认 0.05，用于初期训练）
+        - use_shanten_reward: 是否使用向听数奖励（默认 True，初期阶段启用）
         """
         self.ready_reward = ready_reward
         self.hu_reward = hu_reward
         self.flower_pig_penalty = flower_pig_penalty
         self.final_score_weight = final_score_weight
+        self.shanten_reward_weight = shanten_reward_weight
+        self.use_shanten_reward = use_shanten_reward
     
     def compute_step_reward(
         self,
         is_ready: bool = False,
         is_hu: bool = False,
         is_flower_pig: bool = False,
+        shanten: Optional[int] = None,
+        previous_shanten: Optional[int] = None,
     ) -> float:
         """
         计算单步奖励（引导奖惩）
@@ -46,11 +54,24 @@ class RewardShaping:
         - is_ready: 是否听牌
         - is_hu: 是否胡牌
         - is_flower_pig: 是否成为花猪
+        - shanten: 当前向听数（可选，用于初期训练）
+        - previous_shanten: 上一步的向听数（可选，用于计算向听数改善）
         
         返回：
         - 即时奖励
         """
         reward = 0.0
+        
+        # 向听数奖励（用于初期训练）
+        # 奖励向听数减少（即手牌质量改善）
+        if self.use_shanten_reward and shanten is not None:
+            if previous_shanten is not None and shanten < previous_shanten:
+                # 向听数减少，给予奖励
+                shanten_improvement = previous_shanten - shanten
+                reward += shanten_improvement * self.shanten_reward_weight
+            elif shanten == 0:
+                # 已听牌，给予额外奖励（与 ready_reward 叠加）
+                reward += self.ready_reward * 0.5
         
         # 听牌奖励
         if is_ready:

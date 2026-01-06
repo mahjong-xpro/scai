@@ -14,6 +14,7 @@ pub mod blood_battle;
 pub mod kong;
 pub mod pong;
 pub mod ready;
+pub mod shanten;
 pub mod game_engine;
 pub mod action_callback;
 
