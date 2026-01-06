@@ -234,7 +234,34 @@ pub fn state_to_tensor(
             }
         }
         
-        // ========== 扩展特征平面（14-63）==========
+        // Plane 30: 每张牌的剩余未见牌张数（0-4，归一化到 [0, 1]）
+        // 计算公式：Remaining(Tile) = 4 - Self(Tile) - Discarded(Tile) - Melded(Tile)
+        // 这是"残牌感知"的关键特征，用于AI学会"算牌"和"绝张"判断
+        // 
+        // 重要性：
+        // - 如果剩余 = 0，该牌已经绝张，打出去绝对安全（不会点炮）
+        // - 如果剩余 = 1，需要谨慎（可能是对手听牌）
+        // - 如果剩余 = 2-4，可以正常考虑
+        // 
+        // 顶级高手会算"绝张"。如果特征里没有这个，AI 永远学不会
+        // "这张牌场上已经现了 3 张，我手里有 1 张，所以我打出去绝对不会有点炮风险"
+        // 这种高级防御策略。
+        for suit in 0..3 {
+            for rank in 0..9 {
+                let tile_idx = suit * 9 + rank;
+                let appeared_count = tile_visibility[tile_idx];
+                // 计算剩余未见牌张数：4 - 已出现的张数
+                let remaining_count = 4u8.saturating_sub(appeared_count);
+                
+                // 归一化到 [0, 1] 范围（除以 4）
+                let normalized = (remaining_count as f32 / 4.0).min(1.0);
+                data[[30, suit, rank]] = normalized;
+            }
+        }
+        
+        // ========== 扩展特征平面（14-29, 31-63）==========
+        // 注意：Plane 14-29 用于弃牌序列（每个玩家4个平面）
+        // Plane 30 已用于剩余未见牌张数
         
         let use_oracle = use_oracle.unwrap_or(false);
         let mut plane_idx = 14; // 从 14 开始，因为 Plane 13 用于牌池可见性
