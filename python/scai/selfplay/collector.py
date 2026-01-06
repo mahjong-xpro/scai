@@ -171,13 +171,25 @@ class DataCollector:
         - 包含收集统计信息的字典
         """
         if self.workers is None:
+            # 添加日志以便调试
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info(f"Initializing {self.num_workers} workers...")
             self.initialize_workers()
+            logger.info(f"Workers initialized successfully")
+        
+        # 添加日志以便调试
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"Starting parallel trajectory collection with {len(self.workers)} workers...")
         
         # 并行收集轨迹
         trajectories = collect_trajectories_parallel(
             self.workers,
             model_state_dict,
         )
+        
+        logger.info(f"Collection complete: {len(trajectories)} trajectories collected")
         
         # 处理轨迹，添加到缓冲区
         num_trajectories = len(trajectories)

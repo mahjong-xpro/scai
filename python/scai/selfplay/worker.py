@@ -585,21 +585,39 @@ def create_workers(
     返回：
     - Worker 列表
     """
-    workers = []
-    for i in range(num_workers):
-        worker = SelfPlayWorker.remote(
-            worker_id=i,
-            num_games=num_games_per_worker,
-            use_oracle=use_oracle,
-            ismcts=ismcts,  # 注意：Ray 可能无法序列化 ISMCTS，需要特殊处理
-            use_search_enhanced=use_search_enhanced,
-            critical_decision_threshold=critical_decision_threshold,
-            use_feeding=use_feeding,
-            feeding_config=feeding_config,
-            enable_win=enable_win,
-        )
-        workers.append(worker)
+    import logging
+    logger = logging.getLogger(__name__)
     
+    workers = []
+    # 分批创建 workers，避免一次性创建太多导致卡住
+    batch_size = min(10, num_workers)  # 每批最多 10 个
+    
+    for i in range(0, num_workers, batch_size):
+        batch_end = min(i + batch_size, num_workers)
+        logger.info(f"Creating workers {i} to {batch_end-1} ({batch_end-i}/{num_workers})...")
+        
+        for j in range(i, batch_end):
+            try:
+                worker = SelfPlayWorker.remote(
+                    worker_id=j,
+                    num_games=num_games_per_worker,
+                    use_oracle=use_oracle,
+                    ismcts=ismcts,  # 注意：Ray 可能无法序列化 ISMCTS，需要特殊处理
+                    use_search_enhanced=use_search_enhanced,
+                    critical_decision_threshold=critical_decision_threshold,
+                    use_feeding=use_feeding,
+                    feeding_config=feeding_config,
+                    enable_win=enable_win,
+                )
+                workers.append(worker)
+            except Exception as e:
+                logger.error(f"Failed to create worker {j}: {e}")
+                # 继续创建其他 workers
+                continue
+        
+        logger.info(f"Created {len(workers)}/{num_workers} workers so far...")
+    
+    logger.info(f"All {len(workers)} workers created successfully")
     return workers
 
 
@@ -617,21 +635,38 @@ def collect_trajectories_parallel(
     返回：
     - 所有轨迹的列表
     """
+    import logging
+    import time
+    logger = logging.getLogger(__name__)
+    
+    logger.info(f"Submitting {len(workers)} worker tasks...")
     # 并行运行所有 Worker
     futures = [worker.run.remote(model_state_dict) for worker in workers]
+    logger.info(f"All {len(futures)} tasks submitted, waiting for results...")
     
     # 使用 ray.wait 处理部分失败，提高健壮性
     all_trajectories = []
     remaining_futures = futures
     failed_workers = 0
+    start_time = time.time()
+    last_log_time = start_time
     
     while remaining_futures:
         try:
-            # 等待至少一个 worker 完成，最多等待 5 分钟
+            current_time = time.time()
+            elapsed = current_time - start_time
+            
+            # 每 10 秒记录一次进度
+            if current_time - last_log_time >= 10.0:
+                logger.info(f"Waiting for {len(remaining_futures)} workers... "
+                          f"(elapsed: {elapsed:.1f}s, completed: {len(all_trajectories)} trajectories)")
+                last_log_time = current_time
+            
+            # 等待至少一个 worker 完成，最多等待 60 秒（减少超时以便更早发现问题）
             ready, remaining_futures = ray.wait(
                 remaining_futures,
                 num_returns=1,
-                timeout=300.0,  # 5分钟超时
+                timeout=60.0,  # 减少到 60 秒超时
             )
             
             # 处理已完成的 worker
