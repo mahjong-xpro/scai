@@ -293,9 +293,13 @@ impl GameEngine {
         self.state.last_action = Some(Action::Gang { tile, is_concealed });
         self.state.current_player = player_id;
         
-        // 杠后补牌
+        // 杠后补牌（也算摸牌，需要清除过胡锁定）
         if let Some(new_tile) = self.wall.draw() {
-            self.state.players[player_id as usize].hand.add_tile(new_tile);
+            let player = &mut self.state.players[player_id as usize];
+            player.hand.add_tile(new_tile);
+            // 清除过胡锁定（规则：过胡锁定只在"下一次摸牌前"有效）
+            // 杠后补牌也算摸牌，所以需要清除
+            player.clear_passed_win();
         }
         
         Ok(ActionResult::Ganged { tile, kong_type, settlement })
