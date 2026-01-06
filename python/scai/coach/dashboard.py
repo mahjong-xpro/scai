@@ -90,7 +90,13 @@ class DashboardStateManager:
                 try:
                     subscriber.put_nowait(status_dict)
                 except queue.Full:
-                    pass  # 跳过满队列
+                    # 队列满时，移除最旧的数据，添加新数据
+                    try:
+                        subscriber.get_nowait()  # 移除最旧的数据
+                        subscriber.put_nowait(status_dict)
+                    except queue.Empty:
+                        # 如果队列为空但仍报 Full，可能是并发问题，跳过
+                        pass
     
     def get_status(self) -> Dict[str, Any]:
         """获取当前状态"""
@@ -99,7 +105,7 @@ class DashboardStateManager:
     
     def subscribe(self) -> queue.Queue:
         """订阅状态更新"""
-        subscriber_queue = queue.Queue(maxsize=10)
+        subscriber_queue = queue.Queue(maxsize=100)  # 增加容量以减少数据丢失
         with self._lock:
             self._subscribers.append(subscriber_queue)
         return subscriber_queue
@@ -146,8 +152,14 @@ def update_training_status(
             min_iter = current_curriculum.min_iterations
             max_iter = current_curriculum.max_iterations
             if max_iter > min_iter:
-                progress = (current_iteration - min_iter) / (max_iter - min_iter)
-                stage_progress = max(0.0, min(1.0, progress))
+                # 添加边界检查，确保 current_iteration >= min_iter
+                if current_iteration < min_iter:
+                    stage_progress = 0.0
+                else:
+                    progress = (current_iteration - min_iter) / (max_iter - min_iter)
+                    stage_progress = max(0.0, min(1.0, progress))
+            else:
+                stage_progress = 0.0
         else:
             # 基于评估标准计算进度
             if metrics:
@@ -155,8 +167,10 @@ def update_training_status(
                 total_criteria = len(current_curriculum.evaluation_criteria)
                 if total_criteria > 0:
                     for criterion, threshold in current_curriculum.evaluation_criteria.items():
-                        if criterion in metrics:
-                            value = metrics[criterion]
+                        # 使用 .get() 方法提供默认值，避免 KeyError
+                        value = metrics.get(criterion, None)
+                        if value is None:
+                            continue
                             if criterion.endswith('_rate') and 'pig' in criterion:
                                 if value <= threshold:
                                     met_criteria += 1

@@ -187,24 +187,39 @@ class DataCollector:
         
         for traj_idx, trajectory in enumerate(trajectories):
             # 验证轨迹（如果启用）
+            is_valid = True
+            validation_errors = []
+            
             if self.validate_data and self.validator is not None:
-                is_valid, errors = self.validator.validate_trajectory(
+                is_valid, validation_errors = self.validator.validate_trajectory(
                     trajectory,
                     trajectory_id=f"trajectory_{traj_idx}",
                 )
                 
                 if not is_valid:
                     invalid_trajectories += 1
-                    # 在非严格模式下，只记录错误但继续处理
-                    if self.validator.strict_mode:
-                        # 严格模式：跳过无效轨迹
-                        continue
-                    else:
-                        # 非严格模式：记录警告但继续处理
-                        if errors:
-                            print(f"Warning: Trajectory {traj_idx} has {len(errors)} validation errors (continuing anyway)")
+                    # 记录无效轨迹（即使是非严格模式）
+                    if validation_errors:
+                        print(f"Warning: Trajectory {traj_idx} has {len(validation_errors)} validation errors")
+                        # 在非严格模式下，记录但继续处理
+                        if self.validator.strict_mode:
+                            # 严格模式：跳过无效轨迹
+                            continue
                 else:
                     valid_trajectories += 1
+            else:
+                # 如果没有验证，假设所有轨迹都有效
+                valid_trajectories += 1
+                is_valid = True
+            
+            # 计算无效轨迹比例（在处理每个轨迹后检查）
+            total_checked = valid_trajectories + invalid_trajectories
+            if total_checked > 0:
+                invalid_rate = invalid_trajectories / total_checked
+                # 如果无效轨迹比例超过 50%，发出警告
+                if invalid_rate > 0.5 and total_checked >= 10:
+                    print(f"Warning: High invalid trajectory rate: {invalid_rate:.2%} ({invalid_trajectories}/{total_checked})")
+                    print("Consider checking data collection logic or validation rules.")
             
             # 更新奖励
             rewards = self.reward_shaping.update_rewards(

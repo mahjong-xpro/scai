@@ -318,15 +318,32 @@ class OpponentPool:
         
         返回：
         - 模型状态字典
+        
+        抛出：
+        - RuntimeError: 如果加载失败
         """
         if opponent.model_state_dict is not None:
             return opponent.model_state_dict
         
         # 从 Checkpoint 加载
+        import os
+        if not os.path.exists(opponent.checkpoint_path):
+            raise RuntimeError(
+                f"Checkpoint file not found for opponent {opponent.model_id}: {opponent.checkpoint_path}"
+            )
+        
         try:
             checkpoint = torch.load(opponent.checkpoint_path, map_location='cpu')
+            if 'model_state_dict' not in checkpoint:
+                raise RuntimeError(
+                    f"Checkpoint file missing 'model_state_dict' for opponent {opponent.model_id}"
+                )
             return checkpoint['model_state_dict']
         except Exception as e:
+            # 如果加载失败，尝试从池中移除该对手
+            if opponent in self.opponents:
+                self.opponents.remove(opponent)
+                self.stats['total_models_removed'] += 1
             raise RuntimeError(f"Failed to load opponent model {opponent.model_id}: {e}") from e
     
     def get_best_opponent(self) -> Optional[OpponentModel]:

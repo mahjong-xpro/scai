@@ -366,9 +366,15 @@ class SelfPlayWorker:
         
         # 确保奖励数量与状态数量一致
         # 注意：奖励已经在动作执行后计算并添加，这里只需要确保数量一致
-        while len(trajectory['rewards']) < len(trajectory['states']):
-            # 如果缺少奖励，使用默认值
-            trajectory['rewards'].append(0.0)
+        if len(trajectory['rewards']) < len(trajectory['states']):
+            missing = len(trajectory['states']) - len(trajectory['rewards'])
+            print(f"Worker {self.worker_id}, Game {game_id}: Warning: {missing} rewards missing, padding with 0.0")
+            trajectory['rewards'].extend([0.0] * missing)
+        elif len(trajectory['rewards']) > len(trajectory['states']):
+            # 不应该发生，但需要处理
+            extra = len(trajectory['rewards']) - len(trajectory['states'])
+            print(f"Worker {self.worker_id}, Game {game_id}: Warning: {extra} extra rewards, truncating")
+            trajectory['rewards'] = trajectory['rewards'][:len(trajectory['states'])]
         
         # 添加最终奖励（如果有最终得分）
         if trajectory['final_score'] != 0.0:
@@ -614,13 +620,45 @@ def collect_trajectories_parallel(
     # 并行运行所有 Worker
     futures = [worker.run.remote(model_state_dict) for worker in workers]
     
-    # 等待所有 Worker 完成
-    results = ray.get(futures)
-    
-    # 合并所有轨迹
+    # 使用 ray.wait 处理部分失败，提高健壮性
     all_trajectories = []
-    for result in results:
-        all_trajectories.extend(result)
+    remaining_futures = futures
+    failed_workers = 0
+    
+    while remaining_futures:
+        try:
+            # 等待至少一个 worker 完成，最多等待 5 分钟
+            ready, remaining_futures = ray.wait(
+                remaining_futures,
+                num_returns=1,
+                timeout=300.0,  # 5分钟超时
+            )
+            
+            # 处理已完成的 worker
+            for future in ready:
+                try:
+                    result = ray.get(future)
+                    all_trajectories.extend(result)
+                except Exception as e:
+                    failed_workers += 1
+                    print(f"Warning: Worker failed: {e}")
+                    # 继续处理其他 worker，不中断整个收集过程
+                    continue
+        except Exception as e:
+            # 处理 ray.wait 本身的异常
+            print(f"Warning: Error waiting for workers: {e}")
+            # 尝试获取剩余的所有结果
+            for future in remaining_futures:
+                try:
+                    result = ray.get(future, timeout=60.0)
+                    all_trajectories.extend(result)
+                except Exception:
+                    failed_workers += 1
+                    continue
+            break
+    
+    if failed_workers > 0:
+        print(f"Warning: {failed_workers}/{len(futures)} workers failed during data collection")
     
     return all_trajectories
 

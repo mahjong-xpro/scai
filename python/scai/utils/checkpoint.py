@@ -56,16 +56,37 @@ class CheckpointManager:
             'timestamp': datetime.now().isoformat(),
         }
         
-        # 生成文件名
-        filename = f'checkpoint_iter_{iteration}.pt'
+        # 生成文件名（添加时间戳以避免冲突）
+        import time
+        timestamp = int(time.time())
+        filename = f'checkpoint_iter_{iteration}_{timestamp}.pt'
         filepath = os.path.join(self.checkpoint_dir, filename)
         
-        # 保存
-        torch.save(checkpoint, filepath)
+        # 原子性保存：先保存到临时文件，然后重命名
+        import shutil
+        temp_filepath = filepath + '.tmp'
+        try:
+            torch.save(checkpoint, temp_filepath)
+            # 原子性重命名
+            shutil.move(temp_filepath, filepath)
+        except Exception as e:
+            # 如果失败，清理临时文件
+            if os.path.exists(temp_filepath):
+                os.remove(temp_filepath)
+            raise RuntimeError(f"Failed to save checkpoint: {e}") from e
         
-        # 同时保存最新版本
+        # 同时保存最新版本（也使用原子性操作）
         latest_path = os.path.join(self.checkpoint_dir, 'latest.pt')
-        torch.save(checkpoint, latest_path)
+        temp_latest = latest_path + '.tmp'
+        try:
+            torch.save(checkpoint, temp_latest)
+            shutil.move(temp_latest, latest_path)
+        except Exception as e:
+            # 如果失败，清理临时文件
+            if os.path.exists(temp_latest):
+                os.remove(temp_latest)
+            # 不抛出异常，因为主 checkpoint 已保存成功
+            print(f"Warning: Failed to save latest checkpoint: {e}")
         
         return filepath
     

@@ -78,7 +78,14 @@ class PPO:
             action_masks = action_masks.to(self.device)
         
         # 归一化优势函数
-        advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+        adv_mean = advantages.mean()
+        adv_std = advantages.std()
+        # 添加显式检查，防止除零
+        if adv_std < 1e-8:
+            # 如果标准差太小，不进行归一化，只减去均值
+            advantages = advantages - adv_mean
+        else:
+            advantages = (advantages - adv_mean) / adv_std
         
         total_policy_loss = 0.0
         total_value_loss = 0.0
@@ -92,8 +99,9 @@ class PPO:
             # 计算新的对数概率
             log_probs = torch.log(policy.gather(1, actions.unsqueeze(1)).squeeze(1) + 1e-8)
             
-            # 计算比率
-            ratio = torch.exp(log_probs - old_log_probs)
+            # 计算比率（限制范围以防止数值溢出）
+            log_ratio = log_probs - old_log_probs
+            ratio = torch.exp(torch.clamp(log_ratio, -10.0, 10.0))
             
             # 策略损失（带裁剪）
             surr1 = ratio * advantages

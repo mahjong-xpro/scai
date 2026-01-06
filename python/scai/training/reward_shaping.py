@@ -59,6 +59,19 @@ class RewardShaping:
         """
         计算单步奖励（引导奖惩）
         
+        参数验证：
+        - shanten 和 previous_shanten 应该在合理范围内（0-8）
+        """
+        # 参数验证
+        if shanten is not None:
+            if shanten < 0 or shanten > 8:
+                raise ValueError(f"Invalid shanten value: {shanten}, expected 0-8")
+        if previous_shanten is not None:
+            if previous_shanten < 0 or previous_shanten > 8:
+                raise ValueError(f"Invalid previous_shanten value: {previous_shanten}, expected 0-8")
+        """
+        计算单步奖励（引导奖惩）
+        
         参数：
         - is_ready: 是否听牌
         - is_hu: 是否胡牌

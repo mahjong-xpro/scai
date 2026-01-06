@@ -93,6 +93,29 @@ class ReplayBuffer:
         if len(self.current_trajectory['states']) == 0:
             return
         
+        # 验证所有列表长度一致
+        lengths = {
+            'states': len(self.current_trajectory['states']),
+            'actions': len(self.current_trajectory['actions']),
+            'rewards': len(self.current_trajectory['rewards']),
+            'values': len(self.current_trajectory['values']),
+            'log_probs': len(self.current_trajectory['log_probs']),
+            'dones': len(self.current_trajectory['dones']),
+        }
+        
+        # 检查核心数据长度是否一致
+        core_lengths = {k: v for k, v in lengths.items() if k != 'action_masks'}
+        if len(set(core_lengths.values())) > 1:
+            raise ValueError(f"Trajectory data length mismatch: {lengths}")
+        
+        # 检查 action_masks 长度（如果存在）
+        if len(self.current_trajectory['action_masks']) > 0:
+            if len(self.current_trajectory['action_masks']) != lengths['states']:
+                raise ValueError(
+                    f"Action masks length mismatch: expected {lengths['states']}, "
+                    f"got {len(self.current_trajectory['action_masks'])}"
+                )
+        
         # 添加到缓冲区
         self.states.extend(self.current_trajectory['states'])
         self.actions.extend(self.current_trajectory['actions'])

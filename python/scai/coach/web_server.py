@@ -454,23 +454,40 @@ def stream_status():
     """Server-Sent Events 流式更新"""
     def generate():
         state_manager = get_state_manager()
-        subscriber_queue = state_manager.subscribe()
+        subscriber_queue = None
         
         try:
+            subscriber_queue = state_manager.subscribe()
+            
             # 立即发送当前状态
-            current_status = state_manager.get_status()
-            yield f"data: {json.dumps(current_status)}\n\n"
+            try:
+                current_status = state_manager.get_status()
+                yield f"data: {json.dumps(current_status)}\n\n"
+            except Exception as e:
+                yield f"event: error\ndata: {json.dumps({'error': f'Failed to get initial status: {str(e)}'})}\n\n"
             
             # 监听更新
             while True:
                 try:
                     status = subscriber_queue.get(timeout=1)
                     yield f"data: {json.dumps(status)}\n\n"
-                except:
+                except queue.Empty:
                     # 超时，发送心跳
                     yield ": heartbeat\n\n"
+                except Exception as e:
+                    # 处理其他异常
+                    yield f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n"
+                    break
+        except Exception as e:
+            # 处理订阅异常
+            yield f"event: error\ndata: {json.dumps({'error': f'Failed to subscribe: {str(e)}'})}\n\n"
         finally:
-            state_manager.unsubscribe(subscriber_queue)
+            # 确保取消订阅
+            if subscriber_queue is not None:
+                try:
+                    state_manager.unsubscribe(subscriber_queue)
+                except Exception:
+                    pass  # 忽略取消订阅时的异常
     
     return Response(
         generate(),

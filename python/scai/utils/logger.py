@@ -341,6 +341,64 @@ class MetricsLogger:
                 self.metrics = json.load(f)
             return True
         return False
+    
+    def get_recent_metrics(self, num_recent: int = 10) -> Dict[str, Any]:
+        """
+        获取最近的指标
+        
+        参数：
+        - num_recent: 获取最近 N 条记录（默认 10）
+        
+        返回：
+        - 包含最近指标的字典
+        """
+        result = {}
+        
+        # 获取最近的损失
+        if self.metrics['losses']:
+            recent_losses = self.metrics['losses'][-num_recent:]
+            if recent_losses:
+                # 计算平均值
+                result['avg_policy_loss'] = sum(l['policy_loss'] for l in recent_losses) / len(recent_losses)
+                result['avg_value_loss'] = sum(l['value_loss'] for l in recent_losses) / len(recent_losses)
+                result['avg_total_loss'] = sum(l['total_loss'] for l in recent_losses) / len(recent_losses)
+        
+        # 获取最近的评估结果
+        if self.metrics['evaluations']:
+            recent_evals = self.metrics['evaluations'][-num_recent:]
+            if recent_evals:
+                result['win_rate'] = recent_evals[-1].get('win_rate', 0.0)
+                result['avg_score'] = recent_evals[-1].get('avg_score', 0.0)
+                result['elo_score'] = recent_evals[-1].get('elo_rating', 1500.0)
+                # 计算平均值
+                result['avg_win_rate'] = sum(e.get('win_rate', 0.0) for e in recent_evals) / len(recent_evals)
+                result['avg_elo_score'] = sum(e.get('elo_rating', 1500.0) for e in recent_evals) / len(recent_evals)
+        
+        # 获取最近的性能指标
+        if self.metrics['performance']:
+            recent_perf = self.metrics['performance'][-num_recent:]
+            if recent_perf:
+                result['games_per_second'] = recent_perf[-1].get('games_per_second', 0.0)
+                result['steps_per_second'] = recent_perf[-1].get('steps_per_second', 0.0)
+        
+        return result
+    
+    def get_validation_stats(self) -> Dict[str, Any]:
+        """
+        获取验证统计信息（用于数据验证器）
+        
+        返回：
+        - 包含验证统计的字典
+        """
+        # 这个方法是为了兼容 DataValidator 的接口
+        # 如果 MetricsLogger 需要支持验证统计，可以在这里实现
+        return {
+            'valid_trajectories': 0,
+            'invalid_trajectories': 0,
+            'valid_rate': 1.0,
+            'errors': [],
+            'warnings': [],
+        }
 
 
 # 全局日志记录器实例（延迟初始化）

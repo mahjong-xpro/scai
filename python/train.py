@@ -20,6 +20,9 @@ import sys
 import yaml
 import torch
 import numpy as np
+import signal
+import shutil
+import time
 from typing import Dict, Optional
 from pathlib import Path
 from datetime import datetime
@@ -369,13 +372,36 @@ def main():
     logger.info(f"Eval interval: {eval_interval}")
     logger.info(f"Save interval: {save_interval}")
     
+    # 添加信号处理，支持优雅中断
+    import signal
+    interrupted = False
+    
+    def signal_handler(sig, frame):
+        nonlocal interrupted
+        logger.info("\nTraining interrupted by user (Ctrl+C)")
+        interrupted = True
+    
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+    
     for iteration in range(start_iteration, num_iterations):
-        logger.info(f"\n{'='*60}")
-        logger.info(f"Iteration {iteration + 1}/{num_iterations}")
-        logger.info(f"{'='*60}")
+        # 检查是否被中断
+        if interrupted:
+            logger.info("Saving checkpoint before exit...")
+            try:
+                trainer.save_checkpoint(iteration + 1)
+                logger.info(f"Checkpoint saved at iteration {iteration + 1}")
+            except Exception as e:
+                logger.error(f"Failed to save checkpoint: {e}")
+            break
         
-        # 更新仪表板状态（如果启用）
-        if HAS_COACH and curriculum is not None:
+        try:
+            logger.info(f"\n{'='*60}")
+            logger.info(f"Iteration {iteration + 1}/{num_iterations}")
+            logger.info(f"{'='*60}")
+            
+            # 更新仪表板状态（如果启用）
+            if HAS_COACH and curriculum is not None:
             current_metrics = {
                 'iteration': iteration + 1,
                 'buffer_size': buffer.size(),

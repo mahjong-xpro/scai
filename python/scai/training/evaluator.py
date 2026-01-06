@@ -213,6 +213,7 @@ class Evaluator:
             wins_a = 0
             total_score_a = 0.0
             total_score_b = 0.0
+            successful_games = 0  # 实际成功完成的游戏数
             
             for game_id in range(num_games):
                 try:
@@ -227,25 +228,35 @@ class Evaluator:
                     
                     total_score_a += game_result['model_a_score']
                     total_score_b += game_result['model_b_score']
+                    successful_games += 1
                 except Exception as e:
                     print(f"Error in comparison game {game_id}: {e}")
                     # 如果游戏失败，跳过
                     continue
             
-            win_rate_a = wins_a / num_games if num_games > 0 else 0.0
+            # 使用实际成功的游戏数计算胜率
+            win_rate_a = wins_a / successful_games if successful_games > 0 else 0.0
+            # 更新 num_games 为实际完成的游戏数（用于后续计算）
+            num_games = successful_games
         
-        # 更新 Elo 评分
-        actual_score = 1.0 if win_rate_a >= 0.5 else 0.0
-        self.elo.update_rating(model_a_id, model_b_id, actual_score)
-        self.elo.update_rating(model_b_id, model_a_id, 1.0 - actual_score)
+        # 更新 Elo 评分（只在有成功游戏时）
+        if num_games > 0:
+            actual_score = 1.0 if win_rate_a >= 0.5 else 0.0
+            self.elo.update_rating(model_a_id, model_b_id, actual_score)
+            self.elo.update_rating(model_b_id, model_a_id, 1.0 - actual_score)
+        
+        # 计算平均得分（防止除零）
+        avg_score_a = total_score_a / num_games if num_games > 0 else 0.0
+        avg_score_b = total_score_b / num_games if num_games > 0 else 0.0
         
         return {
             'model_a_win_rate': win_rate_a,
             'model_b_win_rate': 1.0 - win_rate_a,
-            'model_a_avg_score': total_score_a / num_games if num_games > 0 else 0.0,
-            'model_b_avg_score': total_score_b / num_games if num_games > 0 else 0.0,
+            'model_a_avg_score': avg_score_a,
+            'model_b_avg_score': avg_score_b,
             'model_a_elo': self.elo.get_rating(model_a_id),
             'model_b_elo': self.elo.get_rating(model_b_id),
+            'successful_games': num_games,  # 实际完成的游戏数
         }
     
     def should_keep_model(self, win_rate: float) -> bool:
