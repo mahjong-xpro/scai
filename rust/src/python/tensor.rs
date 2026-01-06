@@ -18,6 +18,7 @@ use crate::python::action_mask::PyActionMask;
 /// - Plane 11: 场上剩余牌堆计数
 /// - Plane 12: 定缺掩码
 /// - Plane 13: 每张牌在场上已出现的张数（0-4，归一化到 [0, 1]）- **墙内残余牌感**
+/// - Plane 30: 每张牌的剩余未见牌张数（0-4，归一化到 [0, 1]）- **残牌感知（关键特征）**
 /// 
 /// 弃牌序列特征（关键特征，用于识别"做牌"意图）：
 /// - Plane 14-17: 玩家0的弃牌序列（最近4次，最旧的在前，最新的在后）
@@ -31,7 +32,7 @@ use crate::python::action_mask::PyActionMask;
 /// - 先打 1 万，再打 9 万 → 可能在做全带幺（保留中张，打掉边张）
 /// 
 /// Oracle 特征平面（仅训练时使用）：
-/// - Plane 30-41: 对手暗牌（手牌）- 仅在 use_oracle=true 时填充
+/// - Plane 31-42: 对手暗牌（手牌）- 仅在 use_oracle=true 时填充
 /// - Plane 63: 牌堆余牌分布汇总 - 仅在 use_oracle=true 时填充
 /// 
 /// # 参数
@@ -283,7 +284,7 @@ pub fn state_to_tensor(
             plane_idx += 1;
         }
         
-        // 平面 46-49: 玩家状态（是否离场）
+        // 平面 47-50: 玩家状态（是否离场）
         for p_id in 0..4 {
             if game_state.players[p_id].is_out {
                 for suit in 0..3 {
@@ -297,7 +298,7 @@ pub fn state_to_tensor(
             plane_idx += 1;
         }
         
-        // 平面 50-53: 听牌状态
+        // 平面 51-54: 听牌状态
         for p_id in 0..4 {
             if game_state.players[p_id].is_ready {
                 for suit in 0..3 {
@@ -311,7 +312,7 @@ pub fn state_to_tensor(
             plane_idx += 1;
         }
         
-        // 平面 54-57: 回合信息
+        // 平面 55-58: 回合信息
         let turn_planes = [
             (game_state.turn % 4) as usize,
             ((game_state.turn / 4) % 4) as usize,
@@ -319,19 +320,19 @@ pub fn state_to_tensor(
             ((game_state.turn / 64) % 4) as usize,
         ];
         for (i, &plane) in turn_planes.iter().enumerate() {
-            if 54 + i < 64 {
+            if 55 + i < 64 {
                 for suit in 0..3 {
                     for rank in 0..9 {
                         if plane > 0 {
-                            data[[54 + i, suit, rank]] = plane as f32 / 4.0;
+                            data[[55 + i, suit, rank]] = plane as f32 / 4.0;
                         }
                     }
                 }
             }
         }
-        plane_idx = 58;
+        plane_idx = 59;
         
-        // 平面 58-61: 当前玩家信息
+        // 平面 59-62: 当前玩家信息
         for p_id in 0..4 {
             if p_id == game_state.current_player as usize {
                 for suit in 0..3 {
