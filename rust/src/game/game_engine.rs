@@ -64,7 +64,7 @@ impl GameEngine {
     pub fn initialize(&mut self) -> Result<(), GameError> {
         // 发牌给所有玩家（每人 13 张）
         // 注意：初始化时不需要清除过胡锁定（因为还没有过胡记录）
-        for i in 0..NUM_PLAYERS {
+        for i in 0..NUM_PLAYERS as usize {
             for _ in 0..13 {
                 if let Some(tile) = self.wall.draw() {
                     // 初始化时直接使用 hand.add_tile，不需要清除过胡锁定
@@ -734,7 +734,7 @@ impl GameEngine {
             if KongHandler::can_rob_kong(other_player, &tile, &other_player.melds) {
                 // 被抢杠胡，取消加杠，处理抢杠胡
                 self.state.check_qiang_gang(&tile, true);
-                return self.handle_win_internal(i, Some((player_id, tile)));
+                return self.handle_win_internal(i as u8, Some((player_id, tile)));
             }
         }
         
