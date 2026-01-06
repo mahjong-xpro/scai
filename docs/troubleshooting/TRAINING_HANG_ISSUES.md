@@ -268,6 +268,76 @@ _$LT$hashbrown..map..HashMap$LT$K$C$V$C$S$C$A$GT$$u20$as$u20$core..clone..Clone$
 
 ---
 
+## 无法停止训练问题
+
+### 问题描述
+
+按 `Ctrl+C` 无法停止训练，进程继续运行。
+
+### 原因分析
+
+1. **Ray workers 不响应信号**：Ray workers 在后台运行，可能不响应主进程的 `SIGINT` 信号
+2. **数据收集阻塞**：如果正在收集数据，Ray workers 可能阻塞在等待任务完成
+3. **信号处理延迟**：主进程需要时间关闭 Ray workers
+
+### 解决方案
+
+#### 方法 1: 等待优雅关闭（推荐）
+
+按一次 `Ctrl+C` 后，等待 10-15 秒，让主进程：
+1. 保存 checkpoint
+2. 关闭 Ray workers
+3. 退出
+
+**不要连续按多次 `Ctrl+C`**，这可能导致信号处理混乱。
+
+#### 方法 2: 强制停止
+
+如果等待后仍无法停止：
+
+```bash
+# 停止 Ray
+ray stop --force
+
+# 终止训练进程
+pkill -f train.py
+```
+
+#### 方法 3: 使用 kill 命令
+
+```bash
+# 查找进程 ID
+ps aux | grep train.py
+
+# 终止进程（替换 <PID> 为实际进程 ID）
+kill -9 <PID>
+```
+
+### 已实施的改进
+
+训练脚本已改进信号处理：
+1. **改进的信号处理**：在收到 `SIGINT` 时尝试关闭 Ray
+2. **finally 块**：确保 Ray 在退出前被关闭
+3. **KeyboardInterrupt 处理**：捕获键盘中断异常
+
+### 预防措施
+
+1. **减少 Worker 数量**：较少的 workers 更容易关闭
+   ```yaml
+   selfplay:
+     num_workers: 10  # 而不是 100
+   ```
+
+2. **设置超时**：在配置中设置合理的超时时间
+
+3. **定期保存**：设置较短的保存间隔，减少数据丢失风险
+
+### 详细说明
+
+参见 `STOP_TRAINING.md` 文件获取完整的停止训练指南。
+
+---
+
 ## 快速诊断步骤
 
 ### 1. 检查进程状态

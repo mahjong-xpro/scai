@@ -421,6 +421,7 @@ def main():
     
     # 搜索增强推理（如果启用）
     ismcts = None
+    use_search_enhanced = False
     search_config = config.get('search_enhanced_inference', {})
     if HAS_ISMCTS and search_config.get('enabled', False):
         ismcts = ISMCTS(
@@ -428,6 +429,7 @@ def main():
             exploration_constant=search_config.get('exploration_constant', 1.41),
             determinization_samples=search_config.get('determinization_samples', 10),
         )
+        use_search_enhanced = True
         logger.info("Search-enhanced inference enabled")
     
     # 评估器
@@ -493,21 +495,38 @@ def main():
     def signal_handler(sig, frame):
         nonlocal interrupted
         logger.info("\nTraining interrupted by user (Ctrl+C)")
+        logger.info("Attempting graceful shutdown...")
         interrupted = True
+        # 如果 Ray 已初始化，尝试关闭 Ray workers
+        if HAS_RAY and ray.is_initialized():
+            try:
+                logger.info("Shutting down Ray...")
+                # 取消所有待处理的任务
+                ray.shutdown()
+                logger.info("Ray shutdown complete")
+            except Exception as e:
+                logger.warning(f"Error shutting down Ray: {e}")
+                # 强制关闭
+                try:
+                    import subprocess
+                    subprocess.run(['ray', 'stop', '--force'], timeout=5, capture_output=True)
+                except Exception:
+                    pass
     
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
     
-    for iteration in range(start_iteration, num_iterations):
-        # 检查是否被中断
-        if interrupted:
-            logger.info("Saving checkpoint before exit...")
-            try:
-                trainer.save_checkpoint(iteration + 1)
-                logger.info(f"Checkpoint saved at iteration {iteration + 1}")
-            except Exception as e:
-                logger.error(f"Failed to save checkpoint: {e}")
-            break
+    try:
+        for iteration in range(start_iteration, num_iterations):
+            # 检查是否被中断
+            if interrupted:
+                logger.info("Saving checkpoint before exit...")
+                try:
+                    trainer.save_checkpoint(iteration + 1)
+                    logger.info(f"Checkpoint saved at iteration {iteration + 1}")
+                except Exception as e:
+                    logger.error(f"Failed to save checkpoint: {e}")
+                break
         
         try:
             logger.info(f"\n{'='*60}")
@@ -713,29 +732,43 @@ def main():
             # 继续下一个迭代或退出
             continue
     
-    logger.info("\nTraining completed!")
-    
-    # 最终评估
-    logger.info("Running final evaluation...")
-    final_model_id = f"iteration_{num_iterations}_final"
-    results = evaluator.evaluate_model(model, final_model_id, num_games=eval_config.get('num_eval_games', 100))
-    final_elo_rating = evaluator.get_model_elo(final_model_id)
-    logger.log_evaluation(num_iterations, results, elo_rating=final_elo_rating, final=True)
-    
-    # 保存最终 Checkpoint
-    final_checkpoint_path = trainer.save_checkpoint(num_iterations)
-    logger.log_checkpoint(num_iterations, final_checkpoint_path, final=True)
-    
-    # 保存最终指标
-    if metrics_logger:
-        metrics_logger.log_evaluation(
-            num_iterations,
-            results.get('win_rate', 0.0),
-            results.get('avg_score', 0.0),
-            final_elo_rating,
-        )
-        metrics_logger.save()
-        logger.info(f"Metrics saved to {metrics_logger.metrics_file}")
+    except KeyboardInterrupt:
+        logger.info("\nTraining interrupted by user (KeyboardInterrupt)")
+        interrupted = True
+    finally:
+        # 确保 Ray 被关闭
+        if HAS_RAY and ray.is_initialized():
+            try:
+                logger.info("Shutting down Ray...")
+                ray.shutdown()
+                logger.info("Ray shutdown complete")
+            except Exception as e:
+                logger.warning(f"Error shutting down Ray: {e}")
+        
+        if not interrupted:
+            logger.info("\nTraining completed!")
+            
+            # 最终评估
+            logger.info("Running final evaluation...")
+            final_model_id = f"iteration_{num_iterations}_final"
+            results = evaluator.evaluate_model(model, final_model_id, num_games=eval_config.get('num_eval_games', 100))
+            final_elo_rating = evaluator.get_model_elo(final_model_id)
+            logger.log_evaluation(num_iterations, results, elo_rating=final_elo_rating, final=True)
+            
+            # 保存最终 Checkpoint
+            final_checkpoint_path = trainer.save_checkpoint(num_iterations)
+            logger.log_checkpoint(num_iterations, final_checkpoint_path, final=True)
+            
+            # 保存最终指标
+            if metrics_logger:
+                metrics_logger.log_evaluation(
+                    num_iterations,
+                    results.get('win_rate', 0.0),
+                    results.get('avg_score', 0.0),
+                    final_elo_rating,
+                )
+                metrics_logger.save()
+                logger.info(f"Metrics saved to {metrics_logger.metrics_file}")
 
 
 if __name__ == '__main__':
