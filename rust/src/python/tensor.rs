@@ -12,14 +12,15 @@ use crate::python::action_mask::PyActionMask;
 /// - 4 个玩家
 /// - 9 种牌（每种花色 1-9）
 /// 
-/// 核心特征平面（前 13 个）：
+/// 核心特征平面（前 14 个）：
 /// - Plane 0-3: 自身手牌（One-hot 表示 1-4 张）
 /// - Plane 4-10: 三个对手的弃牌（带顺序感，每个对手约 2-3 个平面）
 /// - Plane 11: 场上剩余牌堆计数
 /// - Plane 12: 定缺掩码
+/// - Plane 13: 每张牌在场上已出现的张数（0-4，归一化到 [0, 1]）- **墙内残余牌感**
 /// 
 /// Oracle 特征平面（仅训练时使用）：
-/// - Plane 13-24: 对手暗牌（手牌）- 仅在 use_oracle=true 时填充
+/// - Plane 14-25: 对手暗牌（手牌）- 仅在 use_oracle=true 时填充
 /// - Plane 46-55: 牌堆余牌分布 - 仅在 use_oracle=true 时填充
 /// 
 /// # 参数
@@ -130,12 +131,63 @@ pub fn state_to_tensor(
             }
         }
         
-        // ========== 扩展特征平面（13-63）==========
+        // Plane 13: 每张牌在场上已出现的张数（0-4，归一化到 [0, 1]）
+        // 这是"墙内残余牌感"的关键特征，用于AI学会"算牌"
+        // 统计所有可见的牌：手牌 + 碰/杠 + 弃牌
+        let mut tile_visibility = [0u8; 27]; // 27 种牌（3 种花色 × 9 种牌），每种最多 4 张
+        
+        // 统计所有玩家的手牌
+        for player in &game_state.players {
+            for (tile, &count) in player.hand.tiles_map() {
+                let (suit_idx, rank_idx) = tile_to_indices(tile);
+                let tile_idx = suit_idx * 9 + rank_idx;
+                if tile_idx < 27 {
+                    tile_visibility[tile_idx] += count;
+                }
+            }
+        }
+        
+        // 统计已碰/杠的牌
+        for player in &game_state.players {
+            for meld in &player.melds {
+                let (tile, count) = match meld {
+                    crate::game::scoring::Meld::Triplet { tile } => (*tile, 3),
+                    crate::game::scoring::Meld::Kong { tile, .. } => (*tile, 4),
+                };
+                let (suit_idx, rank_idx) = tile_to_indices(&tile);
+                let tile_idx = suit_idx * 9 + rank_idx;
+                if tile_idx < 27 {
+                    tile_visibility[tile_idx] += count;
+                }
+            }
+        }
+        
+        // 统计弃牌历史
+        for discard_record in &game_state.discard_history {
+            let (suit_idx, rank_idx) = tile_to_indices(&discard_record.tile);
+            let tile_idx = suit_idx * 9 + rank_idx;
+            if tile_idx < 27 {
+                tile_visibility[tile_idx] += 1;
+            }
+        }
+        
+        // 填充到 Plane 13（归一化到 [0, 1] 范围，除以 4）
+        for suit in 0..3 {
+            for rank in 0..9 {
+                let tile_idx = suit * 9 + rank;
+                let count = tile_visibility[tile_idx];
+                // 归一化到 [0, 1] 范围（除以 4）
+                let normalized = (count as f32 / 4.0).min(1.0);
+                data[[13, suit, rank]] = normalized;
+            }
+        }
+        
+        // ========== 扩展特征平面（14-63）==========
         
         let use_oracle = use_oracle.unwrap_or(false);
-        let mut plane_idx = 13;
+        let mut plane_idx = 14; // 从 14 开始，因为 Plane 13 用于牌池可见性
         
-        // 平面 13-24: 其他三个玩家的手牌（每个玩家 4 层）
+        // 平面 14-25: 其他三个玩家的手牌（每个玩家 4 层）
         // 注意：这是 Oracle 特征，仅在训练时使用（use_oracle=true）
         if use_oracle {
             for other_player_id in 0..4 {
@@ -147,7 +199,7 @@ pub fn state_to_tensor(
                     for (tile, &tile_count) in player.hand.tiles_map() {
                         if tile_count == count {
                             let (suit_idx, rank_idx) = tile_to_indices(tile);
-                            if plane_idx < 25 {
+                            if plane_idx < 26 {
                                 data[[plane_idx, suit_idx, rank_idx]] = 1.0;
                             }
                         }
@@ -156,13 +208,13 @@ pub fn state_to_tensor(
                 }
             }
         }
-        // 如果不在 Oracle 模式，Plane 13-24 保持为 0（不显示对手暗牌）
+        // 如果不在 Oracle 模式，Plane 14-25 保持为 0（不显示对手暗牌）
         
         // 确保 plane_idx 正确设置
         if !use_oracle {
-            plane_idx = 25;  // 跳过对手手牌平面
+            plane_idx = 26;  // 跳过对手手牌平面
         } else {
-            plane_idx = 25;  // 对手手牌平面已填充
+            plane_idx = 26;  // 对手手牌平面已填充
         }
         
         // 平面 25-28: 已碰/杠的牌（4 个玩家）
@@ -180,7 +232,7 @@ pub fn state_to_tensor(
             plane_idx += 1;
         }
         
-        // 平面 29-32: 玩家状态（是否离场）
+        // 平面 30-33: 玩家状态（是否离场）
         for p_id in 0..4 {
             if game_state.players[p_id].is_out {
                 for suit in 0..3 {
@@ -194,7 +246,7 @@ pub fn state_to_tensor(
             plane_idx += 1;
         }
         
-        // 平面 33-36: 听牌状态
+        // 平面 34-37: 听牌状态
         for p_id in 0..4 {
             if game_state.players[p_id].is_ready {
                 for suit in 0..3 {
@@ -208,7 +260,7 @@ pub fn state_to_tensor(
             plane_idx += 1;
         }
         
-        // 平面 37-40: 回合信息
+        // 平面 38-41: 回合信息
         let turn_planes = [
             (game_state.turn % 4) as usize,
             ((game_state.turn / 4) % 4) as usize,
@@ -216,19 +268,19 @@ pub fn state_to_tensor(
             ((game_state.turn / 64) % 4) as usize,
         ];
         for (i, &plane) in turn_planes.iter().enumerate() {
-            if 37 + i < 64 {
+            if 38 + i < 64 {
                 for suit in 0..3 {
                     for rank in 0..9 {
                         if plane > 0 {
-                            data[[37 + i, suit, rank]] = plane as f32 / 4.0;
+                            data[[38 + i, suit, rank]] = plane as f32 / 4.0;
                         }
                     }
                 }
             }
         }
-        plane_idx = 41;
+        plane_idx = 42;
         
-        // 平面 41-44: 当前玩家信息
+        // 平面 42-45: 当前玩家信息
         for p_id in 0..4 {
             if p_id == game_state.current_player as usize {
                 for suit in 0..3 {
@@ -242,18 +294,18 @@ pub fn state_to_tensor(
             plane_idx += 1;
         }
         
-        // 平面 45: 最后一张牌标记
+        // 平面 46: 最后一张牌标记
         if game_state.is_last_tile {
             for suit in 0..3 {
                 for rank in 0..9 {
-                    if 45 < 64 {
-                        data[[45, suit, rank]] = 1.0;
+                    if 46 < 64 {
+                        data[[46, suit, rank]] = 1.0;
                     }
                 }
             }
         }
         
-        // 平面 46-55: Oracle 特征 - 牌堆余牌分布（仅训练时使用）
+        // 平面 47-56: Oracle 特征 - 牌堆余牌分布（仅训练时使用）
         // 显示每张牌在牌堆中剩余的数量（0-4）
         if use_oracle {
             if let Some(wall_dist) = wall_tile_distribution {
@@ -267,13 +319,13 @@ pub fn state_to_tensor(
                             // 归一化到 [0, 1] 范围（除以 4）
                             let normalized = (count / 4.0).min(1.0);
                             
-                            // 使用 Plane 46-50 记录牌堆余牌分布
-                            // Plane 46: 0 张剩余
-                            // Plane 47: 1 张剩余
-                            // Plane 48: 2 张剩余
-                            // Plane 49: 3 张剩余
-                            // Plane 50: 4 张剩余
-                            let plane_base = 46;
+                            // 使用 Plane 47-51 记录牌堆余牌分布
+                            // Plane 47: 0 张剩余
+                            // Plane 48: 1 张剩余
+                            // Plane 49: 2 张剩余
+                            // Plane 50: 3 张剩余
+                            // Plane 51: 4 张剩余
+                            let plane_base = 47;
                             let count_int = count as u32;
                             
                             if count_int == 0 && plane_base < 64 {
@@ -299,7 +351,7 @@ pub fn state_to_tensor(
                 }
             }
         }
-        // 如果不在 Oracle 模式，Plane 46-55 保持为 0（不显示牌堆余牌分布）
+        // 如果不在 Oracle 模式，Plane 47-56 保持为 0（不显示牌堆余牌分布）
         
         // 平面 56-63: 保留用于未来扩展
     }
