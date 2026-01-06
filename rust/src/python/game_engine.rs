@@ -178,7 +178,6 @@ impl PyGameEngine {
     ) -> PyResult<bool> {
         // 直接修改内部状态
         use crate::game::constants::NUM_PLAYERS;
-        use crate::tile::Tile;
         
         if player_id >= NUM_PLAYERS {
             return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
@@ -186,24 +185,29 @@ impl PyGameEngine {
             ));
         }
         
-        let player = &mut self.inner.state.players[player_id as usize];
-        
-        // 清空当前手牌
-        player.hand.clear();
-        
-        // 从字典中添加牌
+        // 先解析所有牌，避免借用冲突
+        let mut tiles_to_add: Vec<(crate::tile::Tile, u8)> = Vec::new();
         for (tile_str, count_obj) in hand_dict.iter() {
             let tile_str: String = tile_str.extract()?;
             let count: u8 = count_obj.extract()?;
             
             // 解析牌字符串
-            let tile = self._parse_tile_string(&tile_str)?;
-            
-            // 添加指定数量的牌
+            let tile = crate::python::game_state::parse_tile_string(&tile_str)?;
+            tiles_to_add.push((tile, count));
+        }
+        
+        // 现在可以安全地借用 player
+        let player = &mut self.inner.state.players[player_id as usize];
+        
+        // 清空当前手牌
+        player.hand.clear();
+        
+        // 添加所有牌
+        for (tile, count) in tiles_to_add {
             for _ in 0..count {
                 if !player.hand.add_tile(tile) {
                     return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
-                        format!("Cannot add more than 4 tiles of type: {}", tile_str)
+                        format!("Cannot add more than 4 tiles of type: {:?}", tile)
                     ));
                 }
             }
@@ -213,41 +217,6 @@ impl PyGameEngine {
         player.check_ready();
         
         Ok(true)
-    }
-
-    /// 解析牌字符串（内部辅助方法）
-    fn _parse_tile_string(&self, tile_str: &str) -> PyResult<Tile> {
-        use crate::tile::Tile;
-        
-        // 解析格式：如 "Wan(1)", "Tong(5)", "Tiao(9)"
-        if let Some(open_paren) = tile_str.find('(') {
-            let suit_str = &tile_str[..open_paren];
-            let rank_str = &tile_str[open_paren + 1..tile_str.len() - 1];
-            
-            let rank: u8 = rank_str.parse()
-                .map_err(|_| PyErr::new::<pyo3::exceptions::PyValueError, _>(
-                    format!("Invalid rank in tile string: {}", tile_str)
-                ))?;
-            
-            if rank < 1 || rank > 9 {
-                return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
-                    format!("Rank must be between 1 and 9, got: {}", rank)
-                ));
-            }
-            
-            match suit_str {
-                "Wan" => Ok(Tile::Wan(rank)),
-                "Tong" => Ok(Tile::Tong(rank)),
-                "Tiao" => Ok(Tile::Tiao(rank)),
-                _ => Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
-                    format!("Invalid suit in tile string: {}", tile_str)
-                )),
-            }
-        } else {
-            Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
-                format!("Unsupported tile string format: {}. Expected format: 'Wan(1)'", tile_str)
-            ))
-        }
     }
 
     /// 定缺（三花色必缺一）

@@ -80,29 +80,30 @@ impl PyGameState {
             ));
         }
         
-        use crate::engine::action_mask::ActionMask;
-        use crate::tile::Tile;
-        
-        let player = &mut self.inner.players[player_id as usize];
-        
-        // 清空当前手牌
-        player.hand.clear();
-        
-        // 从字典中添加牌
+        // 先解析所有牌，避免借用冲突
+        let mut tiles_to_add: Vec<(Tile, u8)> = Vec::new();
         for (tile_str, count_obj) in hand_dict.iter() {
             let tile_str: String = tile_str.extract()?;
             let count: u8 = count_obj.extract()?;
             
             // 解析牌字符串（格式：如 "Wan(1)", "Tong(5)", "Tiao(9)"）
-            // 简化实现：尝试从字符串中提取花色和数字
-            let tile = self._parse_tile_string(&tile_str)?;
-            
-            // 添加指定数量的牌
+            let tile = parse_tile_string(&tile_str)?;
+            tiles_to_add.push((tile, count));
+        }
+        
+        // 现在可以安全地借用 player
+        let player = &mut self.inner.players[player_id as usize];
+        
+        // 清空当前手牌
+        player.hand.clear();
+        
+        // 添加所有牌
+        for (tile, count) in tiles_to_add {
             for _ in 0..count {
                 if !player.hand.add_tile(tile) {
                     // 如果添加失败（超过4张），返回错误
                     return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
-                        format!("Cannot add more than 4 tiles of type: {}", tile_str)
+                        format!("Cannot add more than 4 tiles of type: {:?}", tile)
                     ));
                 }
             }
@@ -112,45 +113,6 @@ impl PyGameState {
         player.check_ready();
         
         Ok(true)
-    }
-    
-    /// 解析牌字符串（内部辅助方法，不暴露给 Python）
-    fn _parse_tile_string(&self, tile_str: &str) -> PyResult<Tile> {
-        
-        // 解析格式：如 "Wan(1)", "Tong(5)", "Tiao(9)"
-        // 或者 "1Wan", "5Tong", "9Tiao" 等格式
-        
-        // 尝试解析 "Wan(1)" 格式
-        if let Some(open_paren) = tile_str.find('(') {
-            let suit_str = &tile_str[..open_paren];
-            let rank_str = &tile_str[open_paren + 1..tile_str.len() - 1];
-            
-            let rank: u8 = rank_str.parse()
-                .map_err(|_| PyErr::new::<pyo3::exceptions::PyValueError, _>(
-                    format!("Invalid rank in tile string: {}", tile_str)
-                ))?;
-            
-            if rank < 1 || rank > 9 {
-                return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
-                    format!("Rank must be between 1 and 9, got: {}", rank)
-                ));
-            }
-            
-            match suit_str {
-                "Wan" => Ok(Tile::Wan(rank)),
-                "Tong" => Ok(Tile::Tong(rank)),
-                "Tiao" => Ok(Tile::Tiao(rank)),
-                _ => Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
-                    format!("Invalid suit in tile string: {}", tile_str)
-                )),
-            }
-        } else {
-            // 尝试解析其他格式（如 "1Wan"）
-            // 这里简化处理，只支持 "Wan(1)" 格式
-            Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
-                format!("Unsupported tile string format: {}. Expected format: 'Wan(1)'", tile_str)
-            ))
-        }
     }
 
     /// 获取玩家定缺花色
@@ -412,6 +374,43 @@ impl PyGameState {
     /// 获取可变内部 GameState（用于内部访问）
     pub(crate) fn inner_mut(&mut self) -> &mut GameState {
         &mut self.inner
+    }
+}
+
+/// 解析牌字符串（辅助函数，不暴露给 Python）
+/// 
+/// 解析格式：如 "Wan(1)", "Tong(5)", "Tiao(9)"
+pub(crate) fn parse_tile_string(tile_str: &str) -> PyResult<crate::tile::Tile> {
+    // 尝试解析 "Wan(1)" 格式
+    if let Some(open_paren) = tile_str.find('(') {
+        let suit_str = &tile_str[..open_paren];
+        let rank_str = &tile_str[open_paren + 1..tile_str.len() - 1];
+        
+        let rank: u8 = rank_str.parse()
+            .map_err(|_| PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                format!("Invalid rank in tile string: {}", tile_str)
+            ))?;
+        
+        if rank < 1 || rank > 9 {
+            return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                format!("Rank must be between 1 and 9, got: {}", rank)
+            ));
+        }
+        
+        match suit_str {
+            "Wan" => Ok(crate::tile::Tile::Wan(rank)),
+            "Tong" => Ok(crate::tile::Tile::Tong(rank)),
+            "Tiao" => Ok(crate::tile::Tile::Tiao(rank)),
+            _ => Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                format!("Invalid suit in tile string: {}", tile_str)
+            )),
+        }
+    } else {
+        // 尝试解析其他格式（如 "1Wan"）
+        // 这里简化处理，只支持 "Wan(1)" 格式
+        Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+            format!("Unsupported tile string format: {}. Expected format: 'Wan(1)'", tile_str)
+        ))
     }
 }
 

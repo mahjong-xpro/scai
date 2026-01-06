@@ -38,7 +38,7 @@ impl ShantenCalculator {
         
         // 计算手牌中不完整的组合数量
         // 简化算法：统计需要补充的牌数
-        let mut shanten = Self::_calculate_shanten_simple(hand, melds);
+        let shanten = Self::_calculate_shanten_simple(hand, melds);
         
         // 限制最大向听数（通常不超过 8）
         shanten.min(8)
@@ -76,7 +76,7 @@ impl ShantenCalculator {
         
         // 估算顺子数量（简化：假设相邻的牌可以组成顺子）
         // 这里使用更简单的估算：手牌中不同牌型的数量
-        let unique_tiles = tiles_map.len();
+        let _unique_tiles = tiles_map.len();
         
         // 计算向听数
         // 基本公式：需要的组合数 - 已有的组合数
@@ -95,7 +95,8 @@ impl ShantenCalculator {
         // 根据手牌大小调整
         // 如果手牌很少，向听数应该更大
         if hand_size < 10 {
-            shanten += (10 - hand_size) / 2;
+            let adjustment = ((10 - hand_size) / 2) as u8;
+            shanten = shanten.saturating_add(adjustment);
         }
         
         shanten

@@ -97,7 +97,7 @@ pub fn state_to_tensor(
         // Plane 4-10: 三个对手的弃牌（带顺序感，保留向后兼容）
         // 分配：对手 1 用 Plane 4-5，对手 2 用 Plane 6-7，对手 3 用 Plane 8-9，Plane 10 用于最近弃牌
         let mut opponent_idx = 0;
-        let mut opponent_planes = [4, 6, 8]; // 每个对手的起始平面
+        let opponent_planes = [4, 6, 8]; // 每个对手的起始平面
         
         // 按顺序处理三个对手
         for other_player_id in 0..4 {
@@ -184,8 +184,7 @@ pub fn state_to_tensor(
         // Plane 12: 定缺掩码
         // 标记每个玩家的定缺花色
         for p_id in 0..NUM_PLAYERS as usize {
-            if let Some(declared) = game_state.players[p_id].declared_suit {
-                let suit_idx = declared as usize;
+            if game_state.players[p_id].declared_suit.is_some() {
                 // 在该玩家的定缺花色位置标记
                 for rank in 0..9 {
                     data[[12, p_id, rank]] = 1.0;
