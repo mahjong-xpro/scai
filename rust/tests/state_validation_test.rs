@@ -15,11 +15,23 @@ mod tests {
             BloodBattleRules::declare_suit(i, Suit::Wan, &mut state);
         }
         
-        // 添加一些手牌
+        // 添加一些手牌（每种牌最多 4 张，所以需要多种不同的牌）
+        // 每个玩家 13 张牌，使用不同的牌类型
         for i in 0..4 {
-            for _ in 0..13 {
+            // 添加 4 张 1 万
+            for _ in 0..4 {
                 state.players[i].hand.add_tile(Tile::Wan(1));
             }
+            // 添加 4 张 2 万
+            for _ in 0..4 {
+                state.players[i].hand.add_tile(Tile::Wan(2));
+            }
+            // 添加 4 张 3 万
+            for _ in 0..4 {
+                state.players[i].hand.add_tile(Tile::Wan(3));
+            }
+            // 添加 1 张 4 万（总共 13 张）
+            state.players[i].hand.add_tile(Tile::Wan(4));
         }
         
         // 验证状态（假设牌墙剩余 56 张：108 - 52 = 56）
