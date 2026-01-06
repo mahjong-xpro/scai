@@ -35,9 +35,11 @@ mod tests {
         }
         
         // 验证状态（假设牌墙剩余 56 张：108 - 52 = 56）
+        // 实际上，我们添加了：4个玩家 × 13张 = 52张
+        // 牌墙剩余：108 - 52 = 56张
         let wall_remaining = 56;
         let result = state.validate(wall_remaining);
-        assert!(result.is_ok(), "正常状态应该验证通过");
+        assert!(result.is_ok(), "正常状态应该验证通过: {:?}", result);
     }
 
     /// 测试状态验证：无效的当前玩家 ID
