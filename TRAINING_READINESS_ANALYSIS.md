@@ -216,11 +216,28 @@
 - ✅ **状态**: 已修复所有编译错误并成功安装模块
 - ✅ **修复内容**:
   1. ✅ 修复 `state.rs` 中的类型错误：使用 `NUM_PLAYERS` 常量替代硬编码的 `4`
-  2. ✅ 修复 `game_state.rs` 中的导入错误：添加 `Tile` 类型导入
-  3. ✅ 修复 `tensor.rs` 中的类型不匹配：将 `p_id` 转换为 `u8` 进行比较
+  2. ✅ 修复 `game_state.rs` 中的导入错误：在文件顶部添加 `Tile` 类型导入，移除方法内的重复导入
+  3. ✅ 修复 `tensor.rs` 中的类型不匹配：将 `p_id` 转换为 `u8` 进行比较（`record.player_id as usize == p_id`）
   4. ✅ 安装 maturin: `pip install maturin`
-  5. ✅ 编译并安装: `cd rust && python3 -m maturin develop`
-  6. ✅ 验证导入: `import scai_engine` 和 `import scai` 成功
+  5. ✅ 创建虚拟环境: `python3 -m venv .venv`
+  6. ✅ 编译并安装: `source .venv/bin/activate && cd rust && python3 -m maturin develop`
+  7. ✅ 验证导入: `import scai_engine` 和 `import scai` 成功
+- 📝 **安装步骤**:
+  ```bash
+  # 1. 创建虚拟环境（如果还没有）
+  python3 -m venv .venv
+  source .venv/bin/activate
+  
+  # 2. 安装 maturin
+  pip install maturin
+  
+  # 3. 编译并安装 Rust 扩展模块
+  cd rust
+  maturin develop
+  
+  # 4. 验证导入
+  python3 -c "import scai_engine; import scai; print('✅ Success')"
+  ```
 - 📝 **验证命令**:
   ```python
   import scai_engine

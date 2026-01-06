@@ -2,6 +2,7 @@ use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
 use crate::game::state::GameState;
 use crate::game::constants::NUM_PLAYERS;
+use crate::tile::Tile;
 
 /// Python 绑定的游戏状态
 #[pyclass]

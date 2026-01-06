@@ -361,7 +361,8 @@ impl GameState {
     /// - 使用相同的 seed 会产生相同的分配结果（确定性）
     /// - 对手的手牌数量会根据已碰/杠的牌组自动调整
     pub fn fill_unknown_cards(&mut self, viewer_id: u8, remaining_wall_count: usize, seed: u64) {
-        if viewer_id >= 4 {
+        use crate::game::constants::NUM_PLAYERS;
+        if viewer_id >= NUM_PLAYERS {
             return;
         }
 
