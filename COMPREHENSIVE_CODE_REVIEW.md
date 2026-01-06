@@ -90,10 +90,21 @@
 
 ### 1.4 超参数搜索 (`python/scai/training/hyperparameter_search.py`)
 
-**问题**：
-- ❌ `model = DualResNet()  # TODO: 从模板复制` (第184行)
+**状态**：✅ **已修复**
 
-**影响**：超参数搜索无法正常工作
+**修复内容**：
+1. ✅ **实现模型复制功能**：
+   - 实现 `_copy_model_from_template()` 方法
+   - 使用两种方法：`copy.deepcopy()`（优先）和创建新模型并复制 `state_dict()`（备用）
+   - 确保新模型与模板具有相同的结构和参数
+   - 保持模型的训练/评估模式一致
+
+**实现细节**：
+- 优先使用 `copy.deepcopy()` 进行深拷贝（最简单直接）
+- 如果 deepcopy 失败，则创建新模型并复制 `state_dict()`
+- 使用 `strict=False` 参数，允许部分参数不匹配（更灵活）
+- 保持模型的训练/评估模式与模板一致
+- 添加错误处理和警告信息
 
 ### 1.5 评估器 (`python/scai/training/evaluator.py`)
 

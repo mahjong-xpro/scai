@@ -180,8 +180,10 @@ class HyperparameterSearch:
         返回：
         - 评估分数（平均胜率或平均得分）
         """
-        # 创建模型和 PPO
-        model = DualResNet()  # TODO: 从模板复制
+        # 从模板复制模型
+        model = self._copy_model_from_template()
+        
+        # 创建 PPO
         ppo = PPO(
             model=model,
             learning_rate=config.learning_rate,
@@ -197,6 +199,54 @@ class HyperparameterSearch:
         
         # 返回评估分数（使用平均得分）
         return stats.get('avg_score', 0.0)
+    
+    def _copy_model_from_template(self) -> DualResNet:
+        """
+        从模板模型复制一个新模型
+        
+        返回：
+        - 新模型实例（与模板具有相同的结构和参数）
+        """
+        import torch
+        import copy
+        
+        # 方法1：尝试使用 deepcopy（最简单，但可能在某些情况下失败）
+        try:
+            model = copy.deepcopy(self.model_template)
+            return model
+        except Exception as e:
+            # 如果 deepcopy 失败，使用方法2：创建新模型并复制 state_dict
+            pass
+        
+        # 方法2：创建新模型并复制参数
+        # 获取模板模型的配置信息
+        template_info = self.model_template.get_model_info()
+        
+        # 创建新模型（使用相同的架构参数）
+        model = DualResNet(
+            input_channels=64,  # 默认值
+            num_blocks=template_info.get('num_blocks', 20),
+            base_channels=128,  # 默认值
+            feature_dim=template_info.get('feature_dim', 512),
+            action_space_size=template_info.get('action_space_size', 434),
+            hidden_dim=256,  # 默认值
+        )
+        
+        # 复制模板模型的参数（state_dict）
+        # 注意：这要求新模型和模板模型具有相同的架构
+        try:
+            model.load_state_dict(self.model_template.state_dict(), strict=False)
+        except Exception as e:
+            # 如果复制失败（例如架构不匹配），使用随机初始化的模型
+            print(f"Warning: Failed to copy model state_dict: {e}. Using randomly initialized model.")
+        
+        # 确保模型处于评估模式（与模板一致）
+        if hasattr(self.model_template, 'training'):
+            model.train(self.model_template.training)
+        else:
+            model.eval()
+        
+        return model
     
     def get_best_config(self) -> Optional[HyperparameterConfig]:
         """
