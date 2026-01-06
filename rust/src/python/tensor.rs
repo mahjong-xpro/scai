@@ -133,7 +133,7 @@ pub fn state_to_tensor(
         // 
         // 这是 AI 识别"做牌"意图的关键特征
         // 例如：先打 9 万再打 1 万 → 可能在做清一色
-        for p_id in 0..NUM_PLAYERS {
+        for p_id in 0..NUM_PLAYERS as usize {
             // 获取该玩家的弃牌（从弃牌历史中筛选，保持原始顺序）
             let player_discards: Vec<_> = game_state.discard_history
                 .iter()

@@ -725,8 +725,8 @@ impl GameEngine {
     /// 动作处理结果（如果被抢杠胡，返回胡牌结果）
     pub fn handle_add_kong(&mut self, player_id: u8, tile: Tile) -> Result<ActionResult, GameError> {
         // 先检查其他玩家是否可以抢杠胡
-        for i in 0..4u8 {
-            if i == player_id || self.state.players[i as usize].is_out {
+        for i in 0..NUM_PLAYERS as usize {
+            if i == player_id as usize || self.state.players[i].is_out {
                 continue;
             }
             
