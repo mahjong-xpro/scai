@@ -2,6 +2,7 @@ use crate::tile::{Tile, Suit};
 use crate::game::action::Action;
 use crate::game::scoring::ActionFlags;
 use crate::game::player::Player;
+use crate::game::payment::InstantPayment;
 use std::collections::HashMap;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
@@ -65,6 +66,8 @@ pub struct GameState {
     pub out_count: u8,
     /// 弃牌历史记录（按顺序记录所有弃牌）
     pub discard_history: Vec<DiscardRecord>,
+    /// 即时支付记录（记录每笔即时交易的详细信息，用于追溯和退税）
+    pub instant_payments: Vec<InstantPayment>,
 }
 
 impl GameState {
@@ -86,6 +89,7 @@ impl GameState {
             current_player: 0,
             out_count: 0,
             discard_history: Vec::new(),
+            instant_payments: Vec::new(),
         }
     }
 

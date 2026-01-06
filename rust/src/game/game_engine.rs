@@ -6,6 +6,8 @@ use crate::game::kong::KongHandler;
 use crate::game::blood_battle::BloodBattleRules;
 use crate::tile::win_check::WinChecker;
 use crate::game::settlement::GangSettlement;
+use crate::game::payment::{PaymentTracker, PaymentReason, InstantPayment};
+use std::collections::HashMap;
 
 /// 游戏引擎错误
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -253,6 +255,21 @@ impl GameEngine {
             self.state.players.clone()
         };
         let settlement = GangSettlement::calculate_gang_payment(player_id, is_concealed, &players);
+        
+        // 记录即时支付（用于追溯）
+        use crate::game::payment::{PaymentTracker, PaymentReason};
+        let payment_reason = if is_concealed {
+            PaymentReason::ConcealedKong
+        } else {
+            PaymentReason::DirectKong
+        };
+        let instant_payments = PaymentTracker::from_settlement(
+            &settlement,
+            payment_reason,
+            self.state.turn,
+            Some(tile),
+        );
+        self.state.instant_payments.extend(instant_payments);
         
         // 更新玩家杠钱收入
         let income = settlement.payments.get(&player_id).copied().unwrap_or(0);
@@ -742,11 +759,34 @@ impl GameEngine {
                 // 未听牌玩家必须退还所有杠钱
                 let refund_amount = player.gang_earnings;
                 if refund_amount > 0 {
-                    // 找到原始支付者（所有非该玩家的其他玩家）
-                    let original_payers: Vec<u8> = (0..4u8)
-                        .filter(|&id| id != player.id && !self.state.players[id as usize].is_out)
-                        .collect();
+                    // 使用追溯系统找到原始支付者
+                    // 获取该玩家收到的所有杠钱支付记录
+                    let kong_payments = PaymentTracker::get_kong_payments_received(
+                        &self.state.instant_payments,
+                        player.id,
+                    );
                     
+                    // 按支付者分组，计算每个支付者应该收到多少退款
+                    let mut payer_refunds: HashMap<u8, i32> = HashMap::new();
+                    for payment in kong_payments {
+                        *payer_refunds.entry(payment.from_player).or_insert(0) += payment.amount;
+                    }
+                    
+                    // 创建退税记录
+                    for (&payer_id, &amount) in &payer_refunds {
+                        let refund_payment = InstantPayment::new(
+                            player.id,
+                            payer_id,
+                            amount,
+                            PaymentReason::NotReadyRefund,
+                            self.state.turn,
+                            None,
+                        );
+                        self.state.instant_payments.push(refund_payment);
+                    }
+                    
+                    // 创建结算结果
+                    let original_payers: Vec<u8> = payer_refunds.keys().copied().collect();
                     if !original_payers.is_empty() {
                         let refund_settlement = FinalSettlement::refund_gang_money(
                             player.id,
@@ -769,11 +809,34 @@ impl GameEngine {
                 let is_flower_pig = gang_player.has_declared_suit_tiles();
                 
                 if is_flower_pig && gang_player.gang_earnings > 0 {
-                    // 找到原始支付者（所有非杠牌者）
-                    let original_payers: Vec<u8> = (0..4u8)
-                        .filter(|&id| id != gang_record.player_id && !self.state.players[id as usize].is_out)
-                        .collect();
+                    // 使用追溯系统找到原始支付者
+                    // 获取该玩家收到的所有杠钱支付记录
+                    let kong_payments = PaymentTracker::get_kong_payments_received(
+                        &self.state.instant_payments,
+                        gang_record.player_id,
+                    );
                     
+                    // 按支付者分组，计算每个支付者应该收到多少退款
+                    let mut payer_refunds: HashMap<u8, i32> = HashMap::new();
+                    for payment in kong_payments {
+                        *payer_refunds.entry(payment.from_player).or_insert(0) += payment.amount;
+                    }
+                    
+                    // 创建退税记录
+                    for (&payer_id, &amount) in &payer_refunds {
+                        let refund_payment = InstantPayment::new(
+                            gang_record.player_id,
+                            payer_id,
+                            amount,
+                            PaymentReason::FlowerPigRefund,
+                            self.state.turn,
+                            Some(gang_record.tile),
+                        );
+                        self.state.instant_payments.push(refund_payment);
+                    }
+                    
+                    // 创建结算结果
+                    let original_payers: Vec<u8> = payer_refunds.keys().copied().collect();
                     if !original_payers.is_empty() {
                         let refund_amount = gang_player.gang_earnings;
                         let refund_settlement = FinalSettlement::refund_gang_money(

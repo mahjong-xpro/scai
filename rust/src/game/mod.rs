@@ -8,6 +8,7 @@ pub mod action;
 pub mod rules;
 pub mod player;
 pub mod settlement;
+pub mod payment;
 pub mod blood_battle;
 pub mod kong;
 pub mod pong;
