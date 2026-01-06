@@ -112,6 +112,69 @@ impl Player {
         ReadyChecker::check_ready(&self.hand, &self.melds)
     }
 
+    /// 获取所有可听牌（别名，用于更清晰的语义）
+    /// 
+    /// 这是 `get_ready_tiles()` 的别名，用于"查大叫"场景，语义更明确
+    /// 
+    /// # 返回
+    /// 
+    /// 所有可以听的牌列表
+    pub fn get_shouting_tiles(&self) -> Vec<Tile> {
+        self.get_ready_tiles()
+    }
+
+    /// 计算指定可听牌的最大可能番数
+    /// 
+    /// 用于"查大叫"结算，计算如果玩家胡这张牌，可能达到的最大番数。
+    /// 
+    /// # 参数
+    /// 
+    /// - `ready_tile`: 可听的牌
+    /// 
+    /// # 返回
+    /// 
+    /// 最大可能番数（如果该牌不能胡，返回 0）
+    /// 
+    /// # 注意
+    /// 
+    /// - 只计算基础番数和根数倍率
+    /// - 不考虑动作加成（自摸、杠上开花等），因为流局结算时无法确定
+    /// - 龙七对需要特殊处理（基础番数已包含根数倍率）
+    pub fn calculate_max_fan_for_this_tile(&self, ready_tile: Tile) -> u32 {
+        use crate::game::scoring::{BaseFansCalculator, RootCounter, Settlement};
+        use crate::tile::win_check::{WinChecker, WinType};
+        
+        // 创建测试手牌（添加这张牌）
+        let mut test_hand = self.hand.clone();
+        test_hand.add_tile(ready_tile);
+        
+        // 检查是否能胡牌
+        let mut checker = WinChecker::new();
+        let melds_count = self.melds.len() as u8;
+        let win_result = checker.check_win_with_melds(&test_hand, melds_count);
+        
+        if !win_result.is_win {
+            return 0;
+        }
+        
+        // 计算该胡牌类型的番数
+        // 注意：在流局结算时，我们无法确定玩家会以什么方式胡牌（自摸/点炮），
+        // 也无法确定是否会触发动作加成（杠上开花、海底捞月等）。
+        // 因此，我们只计算基础番数和根数，不考虑动作加成。
+        // 这是最保守的做法，确保未听牌玩家按听牌者可能达到的最高番数赔付。
+        let base_fans = BaseFansCalculator::base_fans(win_result.win_type);
+        let roots = RootCounter::count_roots(&test_hand, &self.melds);
+        
+        // 对于龙七对，需要特殊处理
+        if win_result.win_type == WinType::DragonSevenPairs {
+            // 龙七对的基础番数已经包含了根数倍率
+            BaseFansCalculator::dragon_seven_pairs_fans(roots)
+        } else {
+            // 其他牌型：基础番 × 2^根数
+            Settlement::new(base_fans, roots, 0).total_fans().unwrap_or(0)
+        }
+    }
+
     /// 记录过胡（放弃点炮）
     /// 
     /// # 参数

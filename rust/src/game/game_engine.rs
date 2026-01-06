@@ -713,48 +713,17 @@ impl GameEngine {
             // 检查是否听牌
             if player.is_ready {
                 // 计算听牌玩家的最高可能番数
-                // 遍历所有可以听的牌，计算每种可能的胡牌番数，选择最高番数
-                let ready_tiles = player.get_ready_tiles();
+                // 必须遍历所有可听牌，计算每种可能的胡牌番数，选择最高番数
+                // 这样 AI 才会学会在残局进行极限调张，而不是"混日子"
+                let ready_tiles = player.get_shouting_tiles();
                 
                 if !ready_tiles.is_empty() {
-                    let mut max_fan_for_player = 0u32;
-                    let mut checker = WinChecker::new();
-                    
-                    // 遍历所有可以听的牌，计算每种可能的胡牌番数
-                    for &ready_tile in &ready_tiles {
-                        // 创建测试手牌（添加这张牌）
-                        let mut test_hand = player.hand.clone();
-                        test_hand.add_tile(ready_tile);
-                        
-                        // 检查是否能胡牌
-                        let melds_count = player.melds.len() as u8;
-                        let win_result = checker.check_win_with_melds(&test_hand, melds_count);
-                        
-                        if win_result.is_win {
-                            // 计算该胡牌类型的番数
-                            // 注意：在流局结算时，我们无法确定玩家会以什么方式胡牌（自摸/点炮），
-                            // 也无法确定是否会触发动作加成（杠上开花、海底捞月等）。
-                            // 因此，我们只计算基础番数和根数，不考虑动作加成。
-                            // 这是最保守的做法，确保未听牌玩家按听牌者可能达到的最高番数赔付。
-                            let base_fans = BaseFansCalculator::base_fans(win_result.win_type);
-                            let roots = RootCounter::count_roots(&test_hand, &player.melds);
-                            
-                            // 对于龙七对，需要特殊处理
-                            let total = if win_result.win_type == crate::tile::win_check::WinType::DragonSevenPairs {
-                                // 龙七对的基础番数已经包含了根数倍率
-                                BaseFansCalculator::dragon_seven_pairs_fans(roots)
-                            } else {
-                                // 其他牌型：基础番 × 2^根数
-                                if let Some(total) = Settlement::new(base_fans, roots, 0).total_fans() {
-                                    total
-                                } else {
-                                    continue; // 溢出，跳过这张牌
-                                }
-                            };
-                            
-                            max_fan_for_player = max_fan_for_player.max(total);
-                        }
-                    }
+                    // 遍历所有可听牌，计算每种可能的胡牌番数，取最大值
+                    let max_fan_for_player = ready_tiles
+                        .iter()
+                        .map(|&tile| player.calculate_max_fan_for_this_tile(tile))
+                        .max()
+                        .unwrap_or(0);
                     
                     // 更新听牌玩家的最高番数
                     if max_fan_for_player > 0 {
