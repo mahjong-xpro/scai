@@ -558,63 +558,63 @@ def main():
                 
                 # 0. 课程学习阶段调整（如果启用）
                 if curriculum is not None:
-                curriculum_config = config.get('curriculum_learning', {})
-                if (iteration + 1) % curriculum_config.get('llm_coach_frequency', 100) == 0:
-                    # 获取当前性能指标
-                    current_metrics = {
-                        'iteration': iteration + 1,
-                        'buffer_size': buffer.size(),
-                    }
-                    if metrics_logger:
-                        # 尝试从指标日志获取最近的评估结果
-                        recent_metrics = metrics_logger.get_recent_metrics()
-                        current_metrics.update(recent_metrics)
-                    
-                    # 生成课程规划文档（供手动提交给大模型）
-                    current_issues = []  # 可以从评估结果中提取
-                    doc_path = curriculum.design_next_stage(
-                        performance_metrics=current_metrics,
-                        current_issues=current_issues,
-                        iteration=iteration + 1,
-                    )
-                    if doc_path:
-                        logger.info(f"Curriculum design document generated: {doc_path}")
-                    
-                    # 检查是否应该推进阶段（传入迭代次数以支持基于迭代的推进）
-                    if curriculum.should_advance_stage(
-                        current_metrics,
-                        current_iteration=iteration + 1,
-                    ):
-                        old_stage = curriculum.current_stage
-                        curriculum.advance_to_next_stage()
-                        logger.info(f"Advanced from {old_stage.value} to {curriculum.current_stage.value}")
+                    curriculum_config = config.get('curriculum_learning', {})
+                    if (iteration + 1) % curriculum_config.get('llm_coach_frequency', 100) == 0:
+                        # 获取当前性能指标
+                        current_metrics = {
+                            'iteration': iteration + 1,
+                            'buffer_size': buffer.size(),
+                        }
+                        if metrics_logger:
+                            # 尝试从指标日志获取最近的评估结果
+                            recent_metrics = metrics_logger.get_recent_metrics()
+                            current_metrics.update(recent_metrics)
                         
-                        # 更新奖励配置
-                        new_reward_config = curriculum.get_current_reward_config()
-                        if new_reward_config:
-                            reward_shaping.reward_config = new_reward_config
-                            logger.info(f"Updated reward config: {new_reward_config}")
+                        # 生成课程规划文档（供手动提交给大模型）
+                        current_issues = []  # 可以从评估结果中提取
+                        doc_path = curriculum.design_next_stage(
+                            performance_metrics=current_metrics,
+                            current_issues=current_issues,
+                            iteration=iteration + 1,
+                        )
+                        if doc_path:
+                            logger.info(f"Curriculum design document generated: {doc_path}")
                         
-                        # 更新熵系数
-                        new_entropy_coef = curriculum.get_current_entropy_coef()
-                        ppo.entropy_coef = new_entropy_coef
-                        logger.info(f"Updated entropy coef: {new_entropy_coef}")
-                        
-                        # 更新搜索增强推理
-                        new_use_search = curriculum.should_use_search_enhanced()
-                        if new_use_search and not use_search_enhanced and HAS_ISMCTS:
-                            ismcts = ISMCTS(
-                                num_simulations=search_config.get('num_simulations', 100),
-                                exploration_constant=search_config.get('exploration_constant', 1.41),
-                                determinization_samples=search_config.get('determinization_samples', 10),
-                            )
-                            use_search_enhanced = True
-                            logger.info("Enabled search-enhanced inference")
-                        
-                        # 更新对抗训练
-                        new_use_adversarial = curriculum.should_use_adversarial()
-                        if new_use_adversarial:
-                            logger.info("Adversarial training should be enabled for this stage")
+                        # 检查是否应该推进阶段（传入迭代次数以支持基于迭代的推进）
+                        if curriculum.should_advance_stage(
+                            current_metrics,
+                            current_iteration=iteration + 1,
+                        ):
+                            old_stage = curriculum.current_stage
+                            curriculum.advance_to_next_stage()
+                            logger.info(f"Advanced from {old_stage.value} to {curriculum.current_stage.value}")
+                            
+                            # 更新奖励配置
+                            new_reward_config = curriculum.get_current_reward_config()
+                            if new_reward_config:
+                                reward_shaping.reward_config = new_reward_config
+                                logger.info(f"Updated reward config: {new_reward_config}")
+                            
+                            # 更新熵系数
+                            new_entropy_coef = curriculum.get_current_entropy_coef()
+                            ppo.entropy_coef = new_entropy_coef
+                            logger.info(f"Updated entropy coef: {new_entropy_coef}")
+                            
+                            # 更新搜索增强推理
+                            new_use_search = curriculum.should_use_search_enhanced()
+                            if new_use_search and not use_search_enhanced and HAS_ISMCTS:
+                                ismcts = ISMCTS(
+                                    num_simulations=search_config.get('num_simulations', 100),
+                                    exploration_constant=search_config.get('exploration_constant', 1.41),
+                                    determinization_samples=search_config.get('determinization_samples', 10),
+                                )
+                                use_search_enhanced = True
+                                logger.info("Enabled search-enhanced inference")
+                            
+                            # 更新对抗训练
+                            new_use_adversarial = curriculum.should_use_adversarial()
+                            if new_use_adversarial:
+                                logger.info("Adversarial training should be enabled for this stage")
                 
                 # 1. 收集数据（如果需要）
                 if (iteration + 1) % collect_interval == 0:
