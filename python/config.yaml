@@ -90,6 +90,12 @@ curriculum_learning:
   llm_coach_frequency: 100      # 每 N 次迭代生成一次课程规划文档
   document_output_dir: ./coach_documents  # 文档输出目录
   
+  # Web 仪表板配置
+  dashboard:
+    enabled: true               # 是否启用 Web 仪表板
+    host: 0.0.0.0              # 监听地址（0.0.0.0 表示所有网络接口）
+    port: 5000                 # 监听端口
+  
   # 喂牌机制配置
   feeding_games:
     enabled: true               # 是否启用喂牌机制

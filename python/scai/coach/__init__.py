@@ -6,11 +6,13 @@ Coach 模块
 - 策略分析文档生成
 - 奖励函数评价文档生成
 - 课程学习规划文档生成
+- Web 可视化仪表板
 """
 
 from .logger import GameLogger, DecisionLog
 from .document_generator import TrainingDocumentGenerator
 from .curriculum import CurriculumLearning, TrainingStage, CurriculumStep
+from .dashboard import DashboardStateManager, get_state_manager, update_training_status
 
 __all__ = [
     'GameLogger',
@@ -19,5 +21,8 @@ __all__ = [
     'CurriculumLearning',
     'TrainingStage',
     'CurriculumStep',
+    'DashboardStateManager',
+    'get_state_manager',
+    'update_training_status',
 ]
 

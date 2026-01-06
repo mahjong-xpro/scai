@@ -55,6 +55,9 @@ except ImportError:
 try:
     from scai.coach.curriculum import CurriculumLearning, TrainingStage
     from scai.coach.document_generator import TrainingDocumentGenerator
+    from scai.coach.dashboard import update_training_status
+    from scai.coach.web_server import start_server
+    import threading
     HAS_COACH = True
 except ImportError:
     HAS_COACH = False
@@ -284,6 +287,20 @@ def main():
                 curriculum.current_stage = TrainingStage.EXPERT
             
             logger.info(f"Curriculum learning enabled (document generation mode), initial stage: {curriculum.current_stage.value}")
+            
+            # 启动 Web 仪表板（如果启用）
+            dashboard_config = curriculum_config.get('dashboard', {})
+            if dashboard_config.get('enabled', False):
+                dashboard_port = dashboard_config.get('port', 5000)
+                dashboard_host = dashboard_config.get('host', '0.0.0.0')
+                # 在后台线程启动 Web 服务器
+                dashboard_thread = threading.Thread(
+                    target=start_server,
+                    args=(dashboard_host, dashboard_port, False),
+                    daemon=True,
+                )
+                dashboard_thread.start()
+                logger.info(f"课程学习中心 Web 仪表板已启动: http://{dashboard_host}:{dashboard_port}")
     
     # 搜索增强推理（如果启用）
     ismcts = None
@@ -356,6 +373,29 @@ def main():
         logger.info(f"\n{'='*60}")
         logger.info(f"Iteration {iteration + 1}/{num_iterations}")
         logger.info(f"{'='*60}")
+        
+        # 更新仪表板状态（如果启用）
+        if HAS_COACH and curriculum is not None:
+            current_metrics = {
+                'iteration': iteration + 1,
+                'buffer_size': buffer.size(),
+            }
+            if metrics_logger:
+                recent_metrics = metrics_logger.get_recent_metrics()
+                current_metrics.update(recent_metrics)
+            
+            training_stats = {
+                'buffer_size': buffer.size(),
+                'buffer_ready': buffer.is_ready(min_size=training_config.get('batch_size', 4096)),
+            }
+            
+            update_training_status(
+                curriculum=curriculum,
+                current_iteration=iteration + 1,
+                total_iterations=num_iterations,
+                metrics=current_metrics,
+                training_stats=training_stats,
+            )
         
         # 0. 课程学习阶段调整（如果启用）
         if curriculum is not None:
