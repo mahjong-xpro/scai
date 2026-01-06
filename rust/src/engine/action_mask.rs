@@ -92,8 +92,10 @@ impl ActionMask {
         if player_id < state.players.len() {
             let player = &state.players[player_id];
             if !rules::check_passed_win_restriction(
+                tile,
                 fans,
                 player.passed_hu_fan,
+                player.passed_hu_tile,
                 is_self_draw,
             ) {
                 return false;
@@ -584,7 +586,13 @@ impl ActionMask {
                             // 需要计算番数，这里简化处理
                             // 使用新的过胡锁定检查
                             let player = &state.players[player_id_usize];
-                            if !rules::check_passed_win_restriction(1, player.passed_hu_fan, false) {
+                            if !rules::check_passed_win_restriction(
+                                tile,
+                                1,
+                                player.passed_hu_fan,
+                                player.passed_hu_tile,
+                                false,
+                            ) {
                                 return false;
                             }
                         }

@@ -60,8 +60,10 @@ pub fn can_win_after_pass(
 /// 
 /// # 参数
 /// 
+/// - `tile`: 当前要胡的牌
 /// - `fans`: 当前点炮番数
 /// - `passed_hu_fan`: 玩家记录的过胡番数（None 表示未过胡）
+/// - `passed_hu_tile`: 玩家记录的过胡牌（None 表示未过胡）
 /// - `is_self_draw`: 是否自摸（自摸不受过胡限制）
 /// 
 /// # 返回
@@ -73,8 +75,10 @@ pub fn can_win_after_pass(
 /// 如果玩家放弃了当前点炮，在下一次摸牌前，不能胡同一张牌或番数 <= 该记录值的点炮牌
 /// 注意：自摸不受此限制
 pub fn check_passed_win_restriction(
+    tile: crate::tile::Tile,
     fans: u32,
     passed_hu_fan: Option<u32>,
+    passed_hu_tile: Option<crate::tile::Tile>,
     is_self_draw: bool,
 ) -> bool {
     // 自摸不受过胡限制
@@ -86,6 +90,13 @@ pub fn check_passed_win_restriction(
     let Some(threshold) = passed_hu_fan else {
         return true;
     };
+    
+    // 检查是否是同一张牌（如果是，不能胡）
+    if let Some(passed_tile) = passed_hu_tile {
+        if tile == passed_tile {
+            return false; // 不能胡同一张牌
+        }
+    }
     
     // 如果当前番数 <= 过胡记录的番数，不能胡
     if fans <= threshold {

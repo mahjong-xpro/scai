@@ -23,6 +23,10 @@ pub struct Player {
     /// 规则：如果玩家放弃了当前点炮，在下一次摸牌前，不能胡同一张牌或番数 <= 该记录值的点炮牌
     /// 注意：自摸不受此限制
     pub passed_hu_fan: Option<u32>,
+    /// 过胡锁定的牌（None 表示未过胡）
+    /// 
+    /// 规则：如果玩家放弃了某张牌的点炮，在下一次摸牌前，不能胡同一张牌
+    pub passed_hu_tile: Option<Tile>,
 }
 
 impl Player {
@@ -37,6 +41,7 @@ impl Player {
             is_ready: false,
             gang_earnings: 0,
             passed_hu_fan: None,
+            passed_hu_tile: None,
         }
     }
 
@@ -111,19 +116,22 @@ impl Player {
     /// 
     /// # 参数
     /// 
+    /// - `tile`: 放弃的牌
     /// - `fans`: 放弃的点炮番数
     /// 
     /// 如果当前没有过胡记录，或新的番数更小，则更新记录
-    pub fn record_passed_win(&mut self, fans: u32) {
+    pub fn record_passed_win(&mut self, tile: Tile, fans: u32) {
         match self.passed_hu_fan {
             None => {
                 // 第一次过胡，直接记录
                 self.passed_hu_fan = Some(fans);
+                self.passed_hu_tile = Some(tile);
             }
             Some(existing_fans) => {
                 // 如果新的番数更小，更新记录（取更严格的限制）
                 if fans < existing_fans {
                     self.passed_hu_fan = Some(fans);
+                    self.passed_hu_tile = Some(tile);
                 }
             }
         }
@@ -134,6 +142,7 @@ impl Player {
     /// 规则：过胡锁定只在"下一次摸牌前"有效
     pub fn clear_passed_win(&mut self) {
         self.passed_hu_fan = None;
+        self.passed_hu_tile = None;
     }
 }
 

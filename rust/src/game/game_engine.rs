@@ -112,13 +112,26 @@ impl GameEngine {
                     let win_result = checker.check_win_with_melds(&test_hand, melds_count);
                     
                     if win_result.is_win {
-                        // 计算番数
-                        use crate::game::scoring::BaseFansCalculator;
-                        let base_fans = BaseFansCalculator::base_fans(win_result.win_type);
+                        // 计算完整番数（包括根数）
+                        // 注意：不考虑动作加成，因为动作加成是实际胡牌时才确定的
+                        use crate::game::scoring::{BaseFansCalculator, RootCounter};
+                        use crate::tile::win_check::WinType;
                         
-                        // 记录过胡番数
+                        let base_fans = BaseFansCalculator::base_fans(win_result.win_type);
+                        let roots = RootCounter::count_roots(&test_hand, &player.melds);
+                        
+                        // 计算总番数（基础番 × 2^根数）
+                        let total_fans = if win_result.win_type == WinType::DragonSevenPairs {
+                            // 龙七对的基础番数已经包含了根数倍率
+                            BaseFansCalculator::dragon_seven_pairs_fans(roots)
+                        } else {
+                            // 其他牌型：基础番 × 2^根数
+                            base_fans * 2_u32.pow(roots as u32)
+                        };
+                        
+                        // 记录过胡番数和牌（使用完整番数，确保限制足够严格）
                         let player = &mut self.state.players[player_id as usize];
-                        player.record_passed_win(base_fans);
+                        player.record_passed_win(tile, total_fans);
                     }
                 }
                 Ok(ActionResult::Passed)
