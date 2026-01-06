@@ -30,10 +30,13 @@ impl RootCounter {
     /// 使用统一的计数器数组统计所有可见牌（手牌 + 碰/杠），计数为 4 的张数即为根的总数。
     /// 这样可以避免重复计算，确保逻辑正确性。
     /// 
-    /// 根的定义：只要手牌中有 4 张相同的牌（无论是否开杠），就是 1 个根。
-    /// 注意：不能将"杠"等同于"根"，因为：
+    /// 根的定义：**手牌加副牌有4张一样的也算根**。
+    /// 
+    /// 具体规则：
     /// - 如果手牌中有 4 张相同的牌（未开杠），计算 1 个根
     /// - 如果 4 张相同的牌被开杠了（变成 `Meld::Kong`），也应该计算 1 个根
+    /// - **如果手牌中有 1 张，副牌中有 3 张（碰），总共 4 张，也算 1 个根**
+    /// - 如果手牌中有 3 张，副牌中有 1 张（别人打出），直杠后总共 4 张，也算 1 个根
     /// - 同一个 4 张相同的牌，不能既在手牌中计算，又在 `melds` 中计算
     #[inline]
     pub fn count_roots(hand: &Hand, melds: &[Meld]) -> u8 {
@@ -69,11 +72,18 @@ impl RootCounter {
         }
         
         // 统计已碰/杠的牌
+        // 注意：手牌加副牌有4张一样的也算根
+        // 例如：手牌中有1张1万，副牌中有3张1万（碰），总共4张1万，应该算1个根
         for meld in melds {
             match meld {
-                Meld::Triplet { .. } => {
-                    // 碰：3 张相同的牌（不是根）
-                    // 注意：碰不是根，只有 4 张相同的牌才是根
+                Meld::Triplet { tile } => {
+                    // 碰：3 张相同的牌
+                    // 虽然碰本身不是根（只有3张），但如果手牌中还有1张，总共4张，就是根
+                    if let Some(idx) = tile_to_index(tile) {
+                        if idx < 27 {
+                            tile_counts[idx] += 3;
+                        }
+                    }
                 }
                 Meld::Kong { tile, .. } => {
                     // 杠：4 张相同的牌（是根）
@@ -303,6 +313,52 @@ mod tests {
 
         let roots = RootCounter::count_roots(&hand, &melds);
         assert_eq!(roots, 2);
+    }
+
+    #[test]
+    fn test_count_roots_hand_and_pong() {
+        // 测试：手牌中有1张1万，副牌中有3张1万（碰），总共4张1万，应该算1个根
+        let mut hand = Hand::new();
+        // 手牌中有1张1万
+        hand.add_tile(Tile::Wan(1));
+        // 副牌中有3张1万（碰）
+        let melds = vec![
+            Meld::Triplet { tile: Tile::Wan(1) },
+        ];
+
+        let roots = RootCounter::count_roots(&hand, &melds);
+        assert_eq!(roots, 1); // 手牌1张 + 碰3张 = 4张，是1个根
+    }
+
+    #[test]
+    fn test_count_roots_hand_2_and_pong_3() {
+        // 测试：手牌中有2张1万，副牌中有3张1万（碰），总共5张（不是4张，不是根）
+        // 注意：这种情况理论上不应该发生，因为碰需要从手牌中移除2张
+        // 但如果手牌中有2张，碰了3张，总共5张，不是根
+        let mut hand = Hand::new();
+        // 手牌中有2张1万
+        hand.add_tile(Tile::Wan(1));
+        hand.add_tile(Tile::Wan(1));
+        // 副牌中有3张1万（碰）
+        let melds = vec![
+            Meld::Triplet { tile: Tile::Wan(1) },
+        ];
+
+        let roots = RootCounter::count_roots(&hand, &melds);
+        assert_eq!(roots, 0); // 手牌2张 + 碰3张 = 5张，不是4张，不是根
+    }
+
+    #[test]
+    fn test_count_roots_hand_1_pong_3_kong() {
+        // 测试：手牌中有1张1万，副牌中有3张1万（碰），然后加杠
+        // 加杠后：手牌0张 + 杠4张 = 4张，是1个根
+        let hand = Hand::new(); // 加杠后手牌中没有1万了
+        let melds = vec![
+            Meld::Kong { tile: Tile::Wan(1), is_concealed: false }, // 加杠后变成杠
+        ];
+
+        let roots = RootCounter::count_roots(&hand, &melds);
+        assert_eq!(roots, 1); // 杠4张，是1个根
     }
 
     #[test]
