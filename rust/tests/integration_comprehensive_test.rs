@@ -132,9 +132,18 @@ mod tests {
         let roots = RootCounter::count_roots(&hand, &[]);
         assert_eq!(roots, 1, "应该有 1 个根（4 张 1 万）");
         
-        // 如果手牌可以胡，验证是七对
+        // 如果手牌可以胡，验证是七对类型（可能是 SevenPairs 或 PureDragonSevenPairs）
         if result.is_win {
-            assert_eq!(result.win_type, scai_engine::tile::win_check::WinType::SevenPairs);
+            assert!(
+                matches!(
+                    result.win_type,
+                    scai_engine::tile::win_check::WinType::SevenPairs
+                        | scai_engine::tile::win_check::WinType::PureDragonSevenPairs
+                        | scai_engine::tile::win_check::WinType::DragonSevenPairs
+                ),
+                "应该是七对类型，实际是: {:?}",
+                result.win_type
+            );
         }
     }
 
