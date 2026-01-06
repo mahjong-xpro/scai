@@ -23,7 +23,7 @@ import numpy as np
 import signal
 import shutil
 import time
-from typing import Dict, Optional, List
+from typing import Dict, Optional, List, Tuple
 from pathlib import Path
 from datetime import datetime
 
@@ -134,6 +134,71 @@ def create_model(config: Dict, device: str = 'cpu', logger=None, device_id: int 
     return model
 
 
+def setup_gpu_config(config: Dict, logger) -> Tuple[str, int]:
+    """
+    根据配置设置 GPU 环境，并返回设备和可用 GPU 数量
+    
+    参数：
+    - config: 配置字典
+    - logger: 日志记录器
+    
+    返回：
+    - (device, num_gpus): 设备字符串和可用 GPU 数量
+    """
+    gpu_config = config.get('gpu', {})
+    if not gpu_config.get('enabled', False):
+        logger.info("GPU usage is disabled in config. Using CPU.")
+        os.environ["CUDA_VISIBLE_DEVICES"] = ""  # 禁用所有 GPU
+        return 'cpu', 0
+
+    device_ids = gpu_config.get('device_ids', [])
+    if not device_ids:
+        logger.info("GPU enabled but no specific device_ids provided. Using all available GPUs.")
+        if torch.cuda.is_available():
+            num_gpus = torch.cuda.device_count()
+            device_ids = list(range(num_gpus))
+        else:
+            logger.warning("CUDA not available, falling back to CPU.")
+            os.environ["CUDA_VISIBLE_DEVICES"] = ""
+            return 'cpu', 0
+    
+    # 设置 CUDA_VISIBLE_DEVICES
+    os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(map(str, device_ids))
+    logger.info(f"Using GPUs: {device_ids} (CUDA_VISIBLE_DEVICES={os.environ['CUDA_VISIBLE_DEVICES']})")
+
+    if torch.cuda.is_available():
+        # PyTorch 此时只能看到被 CUDA_VISIBLE_DEVICES 限制的 GPU
+        num_visible_gpus = torch.cuda.device_count()
+        logger.info(f"PyTorch will see {num_visible_gpus} GPU(s) as cuda:0 to cuda:{num_visible_gpus-1}")
+        return 'cuda', num_visible_gpus
+    else:
+        logger.warning("CUDA not available after setting CUDA_VISIBLE_DEVICES, falling back to CPU.")
+        return 'cpu', 0
+
+
+def initialize_ray(config: Dict, num_gpus: int, logger):
+    """
+    初始化 Ray 集群
+    
+    参数：
+    - config: 配置字典
+    - num_gpus: 可用 GPU 数量
+    - logger: 日志记录器
+    """
+    if not HAS_RAY:
+        raise ImportError("Ray is required for distributed training. Install with: pip install ray")
+    
+    ray_config = config.get('ray', {})
+    if ray_config.get('init', True):
+        if not ray.is_initialized():
+            ray.init(
+                num_cpus=ray_config.get('num_cpus', None),
+                num_gpus=num_gpus,  # 使用实际可用的 GPU 数量
+                ignore_reinit_error=True,
+            )
+            logger.info(f"Ray initialized with {num_gpus} GPU(s)")
+        else:
+            logger.info("Ray already initialized")
 
 
 def main():
