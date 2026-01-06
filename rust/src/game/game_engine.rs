@@ -62,9 +62,11 @@ impl GameEngine {
     /// 初始化游戏（发牌）
     pub fn initialize(&mut self) -> Result<(), GameError> {
         // 发牌给 4 个玩家（每人 13 张）
+        // 注意：初始化时不需要清除过胡锁定（因为还没有过胡记录）
         for i in 0..4 {
             for _ in 0..13 {
                 if let Some(tile) = self.wall.draw() {
+                    // 初始化时直接使用 hand.add_tile，不需要清除过胡锁定
                     self.state.players[i].hand.add_tile(tile);
                 } else {
                     return Err(GameError::GameOver);
@@ -152,9 +154,8 @@ impl GameEngine {
         
         if let Some(tile) = self.wall.draw() {
             let player = &mut self.state.players[player_id as usize];
-            player.hand.add_tile(tile);
-            // 清除过胡锁定（规则：过胡锁定只在"下一次摸牌前"有效）
-            player.clear_passed_win();
+            // 添加牌到手牌（自动清除过胡锁定）
+            player.add_tile_to_hand(tile);
             
             self.state.last_action = Some(Action::Draw);
             
@@ -173,8 +174,8 @@ impl GameEngine {
     fn handle_discard(&mut self, player_id: u8, tile: Tile) -> Result<ActionResult, GameError> {
         let player = &mut self.state.players[player_id as usize];
         
-        // 检查是否可以出这张牌
-        if !player.hand.remove_tile(tile) {
+        // 检查是否可以出这张牌（自动清除过胡锁定）
+        if !player.remove_tile_from_hand(tile) {
             return Err(GameError::InvalidAction);
         }
         
@@ -213,16 +214,11 @@ impl GameEngine {
             return Err(GameError::InvalidAction);
         }
         
-        // 执行碰牌
+        // 执行碰牌（PongHandler::pong 会修改手牌，自动清除过胡锁定）
         let player = &mut self.state.players[player_id as usize];
         if !PongHandler::pong(player, tile) {
             return Err(GameError::InvalidAction);
         }
-        
-        // 清除过胡锁定（规则：过胡锁定只在"下一次摸牌前"有效）
-        // 碰牌后玩家会继续出牌，但不会摸牌，所以需要在碰牌时清除过胡锁定
-        // 这样玩家在碰牌后可以正常胡牌
-        player.clear_passed_win();
         
         self.state.last_action = Some(Action::Pong { tile });
         self.state.current_player = player_id;
@@ -299,13 +295,10 @@ impl GameEngine {
         self.state.last_action = Some(Action::Gang { tile, is_concealed });
         self.state.current_player = player_id;
         
-        // 杠后补牌（也算摸牌，需要清除过胡锁定）
+        // 杠后补牌（使用包装方法，自动清除过胡锁定）
         if let Some(new_tile) = self.wall.draw() {
             let player = &mut self.state.players[player_id as usize];
-            player.hand.add_tile(new_tile);
-            // 清除过胡锁定（规则：过胡锁定只在"下一次摸牌前"有效）
-            // 杠后补牌也算摸牌，所以需要清除
-            player.clear_passed_win();
+            player.add_tile_to_hand(new_tile);
         }
         
         Ok(ActionResult::Ganged { tile, kong_type, settlement })

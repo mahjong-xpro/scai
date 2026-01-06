@@ -123,8 +123,8 @@ impl KongHandler {
             return false;
         }
         
-        // 从手牌中移除这张牌
-        if !player.hand.remove_tile(tile) {
+        // 从手牌中移除这张牌（使用包装方法，自动清除过胡锁定）
+        if !player.remove_tile_from_hand(tile) {
             return false;
         }
         
@@ -157,9 +157,9 @@ impl KongHandler {
             return false;
         }
         
-        // 从手牌中移除三张相同的牌
+        // 从手牌中移除三张相同的牌（使用包装方法，自动清除过胡锁定）
         for _ in 0..3 {
-            if !player.hand.remove_tile(tile) {
+            if !player.remove_tile_from_hand(tile) {
                 return false;
             }
         }
@@ -185,9 +185,9 @@ impl KongHandler {
             return false;
         }
         
-        // 从手牌中移除四张相同的牌
+        // 从手牌中移除四张相同的牌（使用包装方法，自动清除过胡锁定）
         for _ in 0..4 {
-            if !player.hand.remove_tile(tile) {
+            if !player.remove_tile_from_hand(tile) {
                 return false;
             }
         }

@@ -144,5 +144,45 @@ impl Player {
         self.passed_hu_fan = None;
         self.passed_hu_tile = None;
     }
+
+    /// 添加一张牌到手牌（自动清除过胡锁定）
+    /// 
+    /// 规则：只要手牌发生一次变化，即可清除过胡限制
+    /// 
+    /// # 参数
+    /// 
+    /// - `tile`: 要添加的牌
+    /// 
+    /// # 返回
+    /// 
+    /// 是否成功添加
+    pub fn add_tile_to_hand(&mut self, tile: Tile) -> bool {
+        let result = self.hand.add_tile(tile);
+        if result {
+            // 手牌发生变化，清除过胡锁定
+            self.clear_passed_win();
+        }
+        result
+    }
+
+    /// 从手牌移除一张牌（自动清除过胡锁定）
+    /// 
+    /// 规则：只要手牌发生一次变化，即可清除过胡限制
+    /// 
+    /// # 参数
+    /// 
+    /// - `tile`: 要移除的牌
+    /// 
+    /// # 返回
+    /// 
+    /// 是否成功移除
+    pub fn remove_tile_from_hand(&mut self, tile: Tile) -> bool {
+        let result = self.hand.remove_tile(tile);
+        if result {
+            // 手牌发生变化，清除过胡锁定
+            self.clear_passed_win();
+        }
+        result
+    }
 }
 

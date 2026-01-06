@@ -40,15 +40,19 @@ impl PongHandler {
     /// # 返回
     /// 
     /// 是否成功碰牌
+    /// 
+    /// # 注意
+    /// 
+    /// 碰牌会修改手牌，自动清除过胡锁定（通过 player.remove_tile_from_hand）
     pub fn pong(player: &mut Player, tile: Tile) -> bool {
         // 检查是否可以碰牌
         if !PongHandler::can_pong(player, &tile) {
             return false;
         }
         
-        // 从手牌中移除两张相同的牌
+        // 从手牌中移除两张相同的牌（使用包装方法，自动清除过胡锁定）
         for _ in 0..2 {
-            if !player.hand.remove_tile(tile) {
+            if !player.remove_tile_from_hand(tile) {
                 return false;
             }
         }
