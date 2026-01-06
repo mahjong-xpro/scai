@@ -97,14 +97,18 @@ fn test_passed_win_clear_on_draw() {
     // 测试摸牌后清除过胡锁定
     
     let mut player = Player::new(0);
-    player.record_passed_win(2);
+    player.record_passed_win(Tile::Wan(1), 2);
     assert_eq!(player.passed_hu_fan, Some(2));
+    assert_eq!(player.passed_hu_tile, Some(Tile::Wan(1)));
     
     // 模拟摸牌（应该清除过胡锁定）
     player.clear_passed_win();
     assert_eq!(player.passed_hu_fan, None);
+    assert_eq!(player.passed_hu_tile, None);
     
     // 清除后应该可以胡任何番数的点炮
-    assert!(rules::check_passed_win_restriction(1, player.passed_hu_fan, false));
+    assert!(rules::check_passed_win_restriction(
+        Tile::Wan(1), 1, player.passed_hu_fan, player.passed_hu_tile, false
+    ));
 }
 
