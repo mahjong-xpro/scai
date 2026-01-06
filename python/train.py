@@ -188,14 +188,27 @@ def initialize_ray(config: Dict, num_gpus: int, logger):
     if not HAS_RAY:
         raise ImportError("Ray is required for distributed training. Install with: pip install ray")
     
+    # 设置 Ray 环境变量以抑制警告
+    # 抑制 metrics exporter 连接失败的警告（这些是非关键错误）
+    os.environ.setdefault('RAY_DISABLE_IMPORT_WARNING', '1')
+    # 抑制 accelerator visible devices 警告
+    if num_gpus == 0:
+        os.environ.setdefault('RAY_ACCEL_ENV_VAR_OVERRIDE_ON_ZERO', '0')
+    
     ray_config = config.get('ray', {})
     if ray_config.get('init', True):
         if not ray.is_initialized():
-            ray.init(
-                num_cpus=ray_config.get('num_cpus', None),
-                num_gpus=num_gpus,  # 使用实际可用的 GPU 数量
-                ignore_reinit_error=True,
-            )
+            # 配置 Ray 以抑制 metrics exporter 错误
+            ray_init_config = {
+                'num_cpus': ray_config.get('num_cpus', None),
+                'num_gpus': num_gpus,  # 使用实际可用的 GPU 数量
+                'ignore_reinit_error': True,
+                '_metrics_export_port': None,  # 禁用 metrics exporter
+                '_system_config': {
+                    'metrics_report_interval_ms': 0,  # 禁用 metrics 报告
+                },
+            }
+            ray.init(**ray_init_config)
             logger.info(f"Ray initialized with {num_gpus} GPU(s)")
         else:
             logger.info("Ray already initialized")
