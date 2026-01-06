@@ -62,9 +62,9 @@ impl GameEngine {
 
     /// 初始化游戏（发牌）
     pub fn initialize(&mut self) -> Result<(), GameError> {
-        // 发牌给 4 个玩家（每人 13 张）
+        // 发牌给所有玩家（每人 13 张）
         // 注意：初始化时不需要清除过胡锁定（因为还没有过胡记录）
-        for i in 0..4 {
+        for i in 0..NUM_PLAYERS {
             for _ in 0..13 {
                 if let Some(tile) = self.wall.draw() {
                     // 初始化时直接使用 hand.add_tile，不需要清除过胡锁定

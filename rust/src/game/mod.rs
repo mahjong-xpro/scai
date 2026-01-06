@@ -2,6 +2,7 @@
 /// 
 /// 包含游戏状态、玩家、动作、规则和结算逻辑
 
+pub mod constants;
 pub mod scoring;
 pub mod state;
 pub mod action;
