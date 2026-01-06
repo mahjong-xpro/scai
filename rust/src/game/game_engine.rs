@@ -9,6 +9,8 @@ use crate::game::settlement::GangSettlement;
 use crate::game::payment::{PaymentTracker, PaymentReason, InstantPayment};
 use crate::game::constants::{MAX_TURNS, NUM_PLAYERS};
 use std::collections::HashMap;
+use std::fmt;
+use std::fmt;
 
 /// 游戏引擎错误
 #[derive(Debug, Clone, PartialEq, Eq)]
