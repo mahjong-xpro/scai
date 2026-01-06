@@ -619,8 +619,8 @@ impl GameEngine {
         
         // 按顺序检查每个玩家（从出牌者的下家开始）
         let mut check_order = Vec::new();
-        for i in 1..=3 {
-            let player_id = (discarder_id + i) % 4;
+        for i in 1..NUM_PLAYERS {
+            let player_id = (discarder_id + i) % NUM_PLAYERS;
             if !self.state.players[player_id as usize].is_out {
                 check_order.push(player_id);
             }

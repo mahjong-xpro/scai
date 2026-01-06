@@ -272,7 +272,7 @@ pub fn state_to_tensor(
         // 平面 14-25: 其他三个玩家的手牌（每个玩家 4 层）
         // 注意：这是 Oracle 特征，仅在训练时使用（use_oracle=true）
         if use_oracle {
-            for other_player_id in 0..4 {
+            for other_player_id in 0..NUM_PLAYERS {
                 if other_player_id == player_id {
                     continue;
                 }
@@ -299,8 +299,8 @@ pub fn state_to_tensor(
             plane_idx = 26;  // 对手手牌平面已填充
         }
         
-        // 平面 25-28: 已碰/杠的牌（4 个玩家）
-        for p_id in 0..4 {
+        // 平面 25-28: 已碰/杠的牌（所有玩家）
+        for p_id in 0..NUM_PLAYERS as usize {
             for meld in &game_state.players[p_id].melds {
                 let tile = match meld {
                     crate::game::scoring::Meld::Triplet { tile } => *tile,
@@ -394,9 +394,10 @@ pub fn state_to_tensor(
             if let Some(wall_dist) = wall_tile_distribution {
                 // wall_dist 应该是 108 个浮点数，对应 108 种牌
                 // 每个值表示该牌在牌堆中剩余的数量（0-4）
-                if wall_dist.len() == 108 {
+                use crate::game::constants::TOTAL_TILES;
+                if wall_dist.len() == TOTAL_TILES {
                     // 计算平均剩余牌数（归一化到 [0, 1]）
-                    let avg_remaining: f32 = wall_dist.iter().sum::<f32>() / (108.0 * 4.0);
+                    let avg_remaining: f32 = wall_dist.iter().sum::<f32>() / (TOTAL_TILES as f32 * 4.0);
                     for suit in 0..3 {
                         for rank in 0..9 {
                             if 63 < 64 {
