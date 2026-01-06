@@ -13,10 +13,25 @@ __pycache__/
 .Python
 env/
 venv/
+.venv/
 ENV/
 build/
 dist/
 *.egg-info/
+
+# Checkpoints and models (不提交到仓库)
+checkpoints/
+*.pt
+*.pth
+*.ckpt
+*.h5
+*.pb
+
+# Logs directory
+logs/
+
+# Coach documents (可选，根据需要)
+# coach_documents/
 
 # IDE
 .vscode/

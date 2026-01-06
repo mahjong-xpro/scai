@@ -5,6 +5,9 @@
 ```
 docs/
 ├── README.md                    # 本文档（文档索引）
+├── deployment/                  # 部署相关文档
+│   ├── DEPLOYMENT_GUIDE.md      # 完整部署指南
+│   └── QUICK_START.md           # 快速开始指南
 ├── setup/                       # 环境配置文档
 │   └── GPU_CONFIGURATION.md     # GPU 配置指南
 ├── architecture/                # 架构相关文档
@@ -34,10 +37,12 @@ docs/
 
 ### 新用户入门
 
-1. **[GPU 配置](./setup/GPU_CONFIGURATION.md)** - GPU 环境配置（多 GPU 服务器）
-2. **[训练指南](./training/TRAINING_GUIDE.md)** - 完整的训练流程和配置说明
-3. **[课程学习](./training/CURRICULUM_LEARNING.md)** - 分阶段训练策略
-4. **[检查点管理](./training/CHECKPOINT.md)** - 模型保存和恢复
+1. **[快速开始](./deployment/QUICK_START.md)** - 5 分钟快速部署
+2. **[完整部署指南](./deployment/DEPLOYMENT_GUIDE.md)** - 详细的部署步骤和配置
+3. **[GPU 配置](./setup/GPU_CONFIGURATION.md)** - GPU 环境配置（多 GPU 服务器）
+4. **[训练指南](./training/TRAINING_GUIDE.md)** - 完整的训练流程和配置说明
+5. **[课程学习](./training/CURRICULUM_LEARNING.md)** - 分阶段训练策略
+6. **[检查点管理](./training/CHECKPOINT.md)** - 模型保存和恢复
 
 ### 开发者文档
 
