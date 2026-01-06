@@ -61,6 +61,97 @@ impl PyGameState {
         Ok(hand_dict.into())
     }
 
+    /// 设置玩家手牌
+    /// 
+    /// # 参数
+    /// 
+    /// - `player_id`: 玩家 ID (0-3)
+    /// - `hand_dict`: Python 字典，键为牌字符串（如 "Wan(1)"），值为数量
+    /// 
+    /// # 返回
+    /// 
+    /// 是否成功设置
+    fn set_player_hand(&mut self, player_id: u8, hand_dict: &PyDict) -> PyResult<bool> {
+        if player_id >= 4 {
+            return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                "Invalid player ID",
+            ));
+        }
+        
+        use crate::engine::action_mask::ActionMask;
+        use crate::tile::Tile;
+        
+        let player = &mut self.inner.players[player_id as usize];
+        
+        // 清空当前手牌
+        player.hand.clear();
+        
+        // 从字典中添加牌
+        for (tile_str, count_obj) in hand_dict.iter() {
+            let tile_str: String = tile_str.extract()?;
+            let count: u8 = count_obj.extract()?;
+            
+            // 解析牌字符串（格式：如 "Wan(1)", "Tong(5)", "Tiao(9)"）
+            // 简化实现：尝试从字符串中提取花色和数字
+            let tile = self._parse_tile_string(&tile_str)?;
+            
+            // 添加指定数量的牌
+            for _ in 0..count {
+                if !player.hand.add_tile(tile) {
+                    // 如果添加失败（超过4张），返回错误
+                    return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                        format!("Cannot add more than 4 tiles of type: {}", tile_str)
+                    ));
+                }
+            }
+        }
+        
+        // 更新听牌状态
+        player.check_ready();
+        
+        Ok(true)
+    }
+    
+    /// 解析牌字符串（内部辅助方法）
+    fn _parse_tile_string(&self, tile_str: &str) -> PyResult<Tile> {
+        use crate::tile::Tile;
+        
+        // 解析格式：如 "Wan(1)", "Tong(5)", "Tiao(9)"
+        // 或者 "1Wan", "5Tong", "9Tiao" 等格式
+        
+        // 尝试解析 "Wan(1)" 格式
+        if let Some(open_paren) = tile_str.find('(') {
+            let suit_str = &tile_str[..open_paren];
+            let rank_str = &tile_str[open_paren + 1..tile_str.len() - 1];
+            
+            let rank: u8 = rank_str.parse()
+                .map_err(|_| PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                    format!("Invalid rank in tile string: {}", tile_str)
+                ))?;
+            
+            if rank < 1 || rank > 9 {
+                return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                    format!("Rank must be between 1 and 9, got: {}", rank)
+                ));
+            }
+            
+            match suit_str {
+                "Wan" => Ok(Tile::Wan(rank)),
+                "Tong" => Ok(Tile::Tong(rank)),
+                "Tiao" => Ok(Tile::Tiao(rank)),
+                _ => Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                    format!("Invalid suit in tile string: {}", tile_str)
+                )),
+            }
+        } else {
+            // 尝试解析其他格式（如 "1Wan"）
+            // 这里简化处理，只支持 "Wan(1)" 格式
+            Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                format!("Unsupported tile string format: {}. Expected format: 'Wan(1)'", tile_str)
+            ))
+        }
+    }
+
     /// 获取玩家定缺花色
     fn get_player_declared_suit(&self, player_id: u8) -> PyResult<Option<String>> {
         if player_id >= 4 {
@@ -71,6 +162,38 @@ impl PyGameState {
         
         let player = &self.inner.players[player_id as usize];
         Ok(player.declared_suit.map(|s| format!("{:?}", s)))
+    }
+
+    /// 设置玩家定缺花色
+    /// 
+    /// # 参数
+    /// 
+    /// - `player_id`: 玩家 ID (0-3)
+    /// - `suit`: 定缺花色字符串 ("Wan", "Tong", "Tiao")
+    /// 
+    /// # 返回
+    /// 
+    /// 是否成功设置
+    fn set_player_declared_suit(&mut self, player_id: u8, suit: &str) -> PyResult<bool> {
+        if player_id >= 4 {
+            return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                "Invalid player ID",
+            ));
+        }
+        
+        use crate::tile::Suit;
+        use crate::game::blood_battle::BloodBattleRules;
+        
+        let suit_enum = match suit {
+            "Wan" => Suit::Wan,
+            "Tong" => Suit::Tong,
+            "Tiao" => Suit::Tiao,
+            _ => return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                format!("Invalid suit: {}. Must be 'Wan', 'Tong', or 'Tiao'", suit)
+            )),
+        };
+        
+        Ok(BloodBattleRules::declare_suit(player_id, suit_enum, &mut self.inner))
     }
 
     /// 检查玩家是否已离场

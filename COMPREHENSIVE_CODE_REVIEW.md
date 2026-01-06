@@ -68,11 +68,25 @@
 
 ### 1.3 对抗训练 (`python/scai/training/adversarial.py`)
 
-**问题**：
-- ❌ `# TODO: 在游戏状态中设置定缺` (第138行)
-- ❌ `# TODO: 修改目标玩家的手牌为极烂手牌` (第142行)
+**状态**：✅ **已修复**
 
-**影响**：对抗训练无法正常工作
+**修复内容**：
+1. ✅ **实现设置定缺功能**：
+   - 在 Rust 端为 `PyGameState` 添加 `set_player_declared_suit()` 方法
+   - 在 Python 端使用 `set_player_declared_suit()` 设置定缺
+   - 添加错误处理
+
+2. ✅ **实现修改手牌功能**：
+   - 在 Rust 端为 `PyGameState` 添加 `set_player_hand()` 方法
+   - 实现 `_parse_tile_string()` 辅助方法，解析牌字符串（如 "Wan(1)"）
+   - 在 Python 端实现 `_generate_bad_hand()` 方法，生成极烂手牌（分散、无对子、无顺子）
+   - 添加错误处理
+
+**实现细节**：
+- `set_player_declared_suit()`: 使用 `BloodBattleRules::declare_suit()` 设置定缺
+- `set_player_hand()`: 清空当前手牌，然后从字典中添加新牌，最后更新听牌状态
+- `_generate_bad_hand()`: 使用分散策略，选择间隔较大的牌，避免形成对子或顺子
+- 所有方法都添加了错误处理和 fallback 逻辑
 
 ### 1.4 超参数搜索 (`python/scai/training/hyperparameter_search.py`)
 

@@ -135,12 +135,70 @@ class AdversarialTrainer:
             # 设置其他玩家的定缺
             for player_id, declared_suit in scenario['declared_suits'].items():
                 if declared_suit is not None:
-                    # TODO: 在游戏状态中设置定缺
-                    pass
+                    # 在游戏状态中设置定缺
+                    if hasattr(game_state, 'set_player_declared_suit'):
+                        try:
+                            game_state.set_player_declared_suit(player_id, declared_suit)
+                        except Exception as e:
+                            print(f"Warning: Failed to set declared suit for player {player_id}: {e}")
         
         elif scenario['type'] == 'bad_hand':
-            # TODO: 修改目标玩家的手牌为极烂手牌
-            pass
+            # 修改目标玩家的手牌为极烂手牌
+            target_player_id = scenario['target_player_id']
+            
+            if hasattr(game_state, 'set_player_hand'):
+                try:
+                    # 创建极烂手牌（分散、无对子、无顺子）
+                    # 策略：选择不同花色、不同数字的单张牌，避免形成对子或顺子
+                    bad_hand = self._generate_bad_hand()
+                    
+                    # 转换为字典格式（键为牌字符串，值为数量）
+                    hand_dict = {}
+                    for tile_str, count in bad_hand.items():
+                        hand_dict[tile_str] = count
+                    
+                    game_state.set_player_hand(target_player_id, hand_dict)
+                except Exception as e:
+                    print(f"Warning: Failed to set bad hand for player {target_player_id}: {e}")
+    
+    def _generate_bad_hand(self) -> Dict[str, int]:
+        """
+        生成极烂手牌（分散、无对子、无顺子）
+        
+        返回：
+        - 手牌字典，键为牌字符串，值为数量
+        """
+        # 策略：选择不同花色、不同数字的单张牌
+        # 避免形成对子（相同牌）或顺子（连续数字）
+        
+        # 生成13张牌（标准起手牌数）
+        bad_tiles = []
+        
+        # 使用分散策略：选择间隔较大的牌，避免形成顺子
+        # 例如：1万、4万、7万、2筒、5筒、8筒、3条、6条、9条等
+        
+        suits = ['Wan', 'Tong', 'Tiao']
+        ranks = [1, 4, 7, 2, 5, 8, 3, 6, 9]  # 间隔较大的数字
+        
+        suit_idx = 0
+        rank_idx = 0
+        
+        for _ in range(13):
+            suit = suits[suit_idx % len(suits)]
+            rank = ranks[rank_idx % len(ranks)]
+            
+            tile_str = f"{suit}({rank})"
+            bad_tiles.append(tile_str)
+            
+            suit_idx += 1
+            rank_idx += 1
+        
+        # 转换为字典（统计每张牌的数量）
+        hand_dict = {}
+        for tile_str in bad_tiles:
+            hand_dict[tile_str] = hand_dict.get(tile_str, 0) + 1
+        
+        return hand_dict
     
     def compute_defense_reward(
         self,
