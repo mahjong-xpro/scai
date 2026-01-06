@@ -3,6 +3,7 @@ use pyo3::types::PyList;
 use crate::engine::action_mask::ActionMask;
 
 /// Python 绑定的动作掩码
+#[allow(non_local_definitions)] // PyO3 宏生成的 impl 定义
 #[pyclass]
 pub struct PyActionMask {
     inner: ActionMask,

@@ -5,6 +5,7 @@ use crate::game::constants::NUM_PLAYERS;
 use crate::tile::Tile;
 
 /// Python 绑定的游戏状态
+#[allow(non_local_definitions)] // PyO3 宏生成的 impl 定义
 #[pyclass]
 pub struct PyGameState {
     pub(crate) inner: GameState,

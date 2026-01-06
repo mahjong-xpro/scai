@@ -2,9 +2,6 @@
 /// 
 /// 提供 PyO3 接口，将 Rust 游戏引擎暴露给 Python
 
-// 允许 PyO3 宏生成的 non-local impl 定义（这是 PyO3 的正常行为）
-#![allow(non_local_definitions)]
-
 #[cfg(feature = "python")]
 pub mod game_state;
 #[cfg(feature = "python")]

@@ -5,6 +5,7 @@ use crate::game::action::Action;
 use crate::python::game_state::PyGameState;
 
 /// Python 绑定的游戏引擎
+#[allow(non_local_definitions)] // PyO3 宏生成的 impl 定义
 #[pyclass]
 pub struct PyGameEngine {
     inner: GameEngine,
