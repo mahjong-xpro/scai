@@ -212,15 +212,20 @@
 
 ### 3.1 高优先级问题 ⚠️
 
-#### 1. Python 模块未安装 ❌
-- ❌ **问题**: `scai_engine` 和 `scai` 模块导入失败
+#### 1. Python 模块未安装 ⚠️
+- ⚠️ **问题**: `scai_engine` 和 `scai` 模块需要编译
 - ⚠️ **影响**: 无法运行任何训练代码
 - 💡 **解决方案**: 
   ```bash
   cd rust
-  maturin develop  # 或 maturin build
+  maturin develop  # 开发模式（推荐，自动安装到当前环境）
+  # 或
+  maturin build    # 构建 wheel 包，然后 pip install
   ```
-- 📝 **状态**: 需要先编译 Rust 扩展模块
+- 📝 **状态**: 
+  - ✅ Rust 代码编译通过（`cargo check --features python`）
+  - ⚠️ 需要执行 `maturin develop` 安装 Python 扩展模块
+  - ⚠️ 安装后需要验证模块导入
 
 #### 2. 训练脚本缺失
 - ❌ **问题**: 未找到主训练脚本 (`train.py` 或类似)
