@@ -174,6 +174,100 @@ def collect_trajectories_parallel(...):
 
 ---
 
+## SIGSEGV (Segmentation Fault) 问题
+
+### 问题描述
+
+训练过程中出现 SIGSEGV 错误，导致 Ray workers 崩溃：
+
+```
+(SelfPlayWorker pid=1484676) *** SIGSEGV received at time=1767731500 on cpu 6 ***
+(SelfPlayWorker pid=1484676) PC: @     0x7f26a0476541  (unknown)  
+_$LT$hashbrown..map..HashMap$LT$K$C$V$C$S$C$A$GT$$u20$as$u20$core..clone..Clone$GT$::clone
+```
+
+同时可能伴随 `WallEmpty` 错误：
+```
+(SelfPlayWorker pid=1484719) Worker 4, Game 28, Turn 44 error: Action failed: WallEmpty
+```
+
+### 原因分析
+
+1. **频繁的状态克隆**：每次访问 `engine.state` 都会克隆整个 `GameState`，包括 4 个玩家的手牌（每个手牌包含 HashMap）
+2. **内存压力**：在高并发 Ray workers 环境下，频繁克隆大型结构可能导致内存压力
+3. **状态损坏**：如果游戏状态已损坏，克隆 HashMap 时可能触发 SIGSEGV
+4. **WallEmpty 未处理**：在牌墙为空时继续尝试摸牌，导致状态不一致
+
+### 解决方案
+
+#### 已实施的修复
+
+1. **状态验证**：在克隆 `GameState` 前添加验证，提前发现损坏的状态
+   - 位置：`rust/src/python/game_engine.rs` 的 `state()` getter
+   - 验证玩家 ID、牌数守恒、状态一致性等
+
+2. **错误处理**：在 Python worker 中添加 try-catch，优雅处理状态获取失败
+   - 位置：`python/scai/selfplay/worker.py`
+   - 在访问 `engine.state` 时捕获异常
+
+3. **WallEmpty 检查**：在摸牌前检查牌墙是否为空
+   - 使用 `engine.remaining_tiles()` 检查剩余牌数
+   - 如果为 0，提前结束游戏，避免 `WallEmpty` 错误
+
+#### 预防措施
+
+1. **减少状态克隆频率**：
+   - 缓存状态对象（如果可能）
+   - 只在必要时克隆状态
+   - 考虑使用引用计数（`Arc`/`Rc`）共享状态
+
+2. **监控内存使用**：
+   ```bash
+   # 监控内存使用
+   watch -n 1 'free -h'
+   
+   # 检查是否有 OOM killer 活动
+   dmesg | grep -i "out of memory"
+   ```
+
+3. **调整 Worker 配置**：
+   - 减少并发 worker 数量
+   - 增加每个 worker 的游戏数量
+   - 在 `config.yaml` 中调整：
+     ```yaml
+     selfplay:
+       num_workers: 50  # 减少并发数
+       games_per_worker: 20  # 增加每 worker 游戏数
+     ```
+
+4. **重建 Rust 扩展**：
+   修复后需要重新编译 Rust 扩展：
+   ```bash
+   cd rust
+   maturin develop --release
+   ```
+
+### 诊断步骤
+
+1. **检查日志**：
+   ```bash
+   grep -i "SIGSEGV\|WallEmpty\|validation failed" logs/training_*.log
+   ```
+
+2. **检查内存**：
+   ```bash
+   # 查看内存使用
+   free -h
+   
+   # 查看 OOM killer 日志
+   dmesg | tail -50 | grep -i oom
+   ```
+
+3. **测试单个 Worker**：
+   创建测试脚本验证修复是否有效
+
+---
+
 ## 快速诊断步骤
 
 ### 1. 检查进程状态

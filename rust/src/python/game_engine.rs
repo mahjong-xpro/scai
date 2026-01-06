@@ -143,11 +143,22 @@ impl PyGameEngine {
 
     /// 获取游戏状态
     #[getter]
-    fn state(&self) -> PyGameState {
-        // 使用 GameEngine 的 state 字段（public）
-        PyGameState {
-            inner: self.inner.state.clone(),
+    fn state(&self) -> PyResult<PyGameState> {
+        // 添加防御性检查：验证状态完整性，防止克隆损坏的状态
+        // 这可以帮助提前发现内存损坏，避免 SIGSEGV
+        let wall_count = self.inner.wall.remaining_count();
+        if let Err(e) = self.inner.state.validate(wall_count) {
+            return Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
+                format!("Game state validation failed before cloning: {:?}", e)
+            ));
         }
+        
+        // 使用 GameEngine 的 state 字段（public）
+        // 直接克隆，让 Rust 的内存安全保证处理大部分情况
+        // 如果状态已损坏，validation 应该已经捕获
+        Ok(PyGameState {
+            inner: self.inner.state.clone(),
+        })
     }
 
     /// 获取剩余牌数

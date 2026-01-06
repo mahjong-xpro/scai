@@ -151,7 +151,22 @@ class SelfPlayWorker:
         
         # 定缺阶段：所有玩家必须定缺
         for player_id in range(4):
-            state = engine.state
+            try:
+                state = engine.state
+            except Exception as e:
+                print(f"Worker {self.worker_id}, Game {game_id}, Failed to get state: {e}")
+                # 如果状态获取失败，跳过这个游戏
+                return {
+                    'states': [],
+                    'actions': [],
+                    'rewards': [],
+                    'values': [],
+                    'log_probs': [],
+                    'dones': [],
+                    'action_masks': [],
+                    'final_score': 0.0,
+                }
+            
             if state.get_player_declared_suit(player_id) is not None:
                 continue  # 已经定缺
             
@@ -184,8 +199,13 @@ class SelfPlayWorker:
             turn_count += 1
             
             # 获取当前游戏状态
-            state = engine.state
-            current_player = state.current_player
+            try:
+                state = engine.state
+                current_player = state.current_player
+            except Exception as e:
+                print(f"Worker {self.worker_id}, Game {game_id}, Turn {turn_count}, Failed to get state: {e}")
+                # 如果状态获取失败，结束游戏
+                break
             
             # 检查玩家是否已离场
             if state.is_player_out(current_player):
@@ -194,6 +214,12 @@ class SelfPlayWorker:
                 continue
             
             # 先摸牌（如果是自己的回合）
+            # 检查牌墙是否为空，避免 WallEmpty 错误
+            remaining = engine.remaining_tiles()
+            if remaining == 0:
+                # 牌墙已空，游戏结束
+                break
+            
             try:
                 # 使用 process_action 执行摸牌
                 draw_result = engine.process_action(
@@ -206,10 +232,19 @@ class SelfPlayWorker:
                 if isinstance(draw_result, dict):
                     if draw_result.get('type') == 'error':
                         # 摸牌失败，可能是游戏结束
+                        error_msg = draw_result.get('error', 'Unknown error')
+                        if 'WallEmpty' in str(error_msg):
+                            # 牌墙已空，正常结束
+                            break
+                        print(f"Worker {self.worker_id}, Game {game_id}, Turn {turn_count}, Draw error: {error_msg}")
                         break
                     # 摸牌成功，继续处理
             except Exception as e:
-                print(f"Worker {self.worker_id}, Game {game_id}, Draw error: {e}")
+                error_str = str(e)
+                if 'WallEmpty' in error_str:
+                    # 牌墙已空，正常结束
+                    break
+                print(f"Worker {self.worker_id}, Game {game_id}, Turn {turn_count}, Draw error: {e}")
                 # 如果摸牌失败，可能是游戏结束
                 break
             
@@ -320,9 +355,15 @@ class SelfPlayWorker:
                 )
                 
                 # 更新状态以获取最新信息（用于奖励计算）
-                state = engine.state
-                is_ready_after = state.is_player_ready(current_player)
-                is_flower_pig = self._check_flower_pig(state, current_player)
+                try:
+                    state = engine.state
+                    is_ready_after = state.is_player_ready(current_player)
+                    is_flower_pig = self._check_flower_pig(state, current_player)
+                except Exception as e:
+                    print(f"Worker {self.worker_id}, Game {game_id}, Turn {turn_count}, Failed to get state after action: {e}")
+                    # 如果状态获取失败，使用默认值
+                    is_ready_after = False
+                    is_flower_pig = False
                 
                 # 检查是否胡牌
                 if isinstance(result, dict) and result.get('type') == 'won':
