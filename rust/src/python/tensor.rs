@@ -176,7 +176,7 @@ pub fn state_to_tensor(
         
         // Plane 12: 定缺掩码
         // 标记每个玩家的定缺花色
-        for p_id in 0..4 {
+        for p_id in 0..NUM_PLAYERS as usize {
             if let Some(declared) = game_state.players[p_id].declared_suit {
                 let suit_idx = declared as usize;
                 // 在该玩家的定缺花色位置标记
@@ -315,7 +315,7 @@ pub fn state_to_tensor(
         }
         
         // 平面 47-50: 玩家状态（是否离场）
-        for p_id in 0..4 {
+        for p_id in 0..NUM_PLAYERS as usize {
             if game_state.players[p_id].is_out {
                 for suit in 0..3 {
                     for rank in 0..9 {
@@ -363,7 +363,7 @@ pub fn state_to_tensor(
         plane_idx = 59;
         
         // 平面 59-62: 当前玩家信息
-        for p_id in 0..4 {
+        for p_id in 0..NUM_PLAYERS as usize {
             if p_id == game_state.current_player as usize {
                 for suit in 0..3 {
                     for rank in 0..9 {
