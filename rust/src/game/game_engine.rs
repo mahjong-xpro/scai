@@ -478,31 +478,64 @@ impl GameEngine {
                 self.state.check_gang_pao(&tile, true);
                 
                 // 检查是否是杠上炮：点炮者是否刚刚杠过牌
-                // 使用 gang_history 的最后一条记录来确认是否是点炮者杠的牌
-                if let Some(last_gang) = self.state.gang_history.last() {
-                    // 检查是否是点炮者杠的牌
-                    if last_gang.player_id == discarder_id {
-                        // 进一步检查：是否是在当前回合或最近几回合内杠的牌
-                        // 由于杠后立即出牌，所以应该是当前回合或上一回合
-                        let turn_diff = self.state.turn.saturating_sub(last_gang.turn);
-                        if turn_diff <= 1 {
-                            // 检查点炮者是否有杠钱收入
-                            let discarder = &self.state.players[discarder_id as usize];
-                            if discarder.gang_earnings > 0 {
-                                // 执行杠上炮退税：点炮者把杠钱全部转交给胡牌者
-                                use crate::game::settlement::GangSettlement;
-                                let refund_amount = discarder.gang_earnings;
-                                gang_pao_refund = Some(GangSettlement::calculate_gang_pao_refund(
-                                    discarder_id,
-                                    player_id,
-                                    refund_amount,
-                                ));
-                                
-                                // 更新玩家杠钱收入（点炮者清零，胡牌者增加）
-                                self.state.players[discarder_id as usize].gang_earnings = 0;
-                                self.state.players[player_id as usize].add_gang_earnings(refund_amount);
-                            }
-                        }
+                // 关键：必须能追溯到杠钱的来源，不能只使用累计的 gang_earnings
+                
+                // 方法1：检查 last_action 是否是 Gang（最直接的方法）
+                let is_immediately_after_gang = matches!(
+                    self.state.last_action,
+                    Some(Action::Gang { .. })
+                );
+                
+                // 方法2：检查是否是点炮者刚刚杠的牌（使用 gang_history）
+                let is_discarder_just_ganged = self.state.gang_history
+                    .last()
+                    .map(|last_gang| {
+                        last_gang.player_id == discarder_id &&
+                        self.state.turn.saturating_sub(last_gang.turn) <= 1
+                    })
+                    .unwrap_or(false);
+                
+                // 方法3：使用 PaymentTracker 获取最近一次杠的支付者（最准确的方法）
+                // 这样可以追溯到具体的支付者，而不是使用累计的 gang_earnings
+                let latest_kong_payers = PaymentTracker::get_latest_kong_payers(
+                    &self.state.instant_payments,
+                    discarder_id,
+                );
+                
+                // 只有当满足以下条件时才执行杠上炮退税：
+                // 1. 点炮动作紧跟在杠动作之后（last_action 是 Gang）
+                // 2. 点炮者刚刚杠过牌（gang_history 确认）
+                // 3. 有最近一次杠的支付记录（可以追溯到具体金额）
+                if is_immediately_after_gang && is_discarder_just_ganged && !latest_kong_payers.is_empty() {
+                    // 计算最近一次杠的总收入（这才是应该退还的金额）
+                    let refund_amount: i32 = latest_kong_payers
+                        .iter()
+                        .map(|(_, amount)| *amount)
+                        .sum();
+                    
+                    if refund_amount > 0 {
+                        // 执行杠上炮退税：点炮者把最近一次杠的钱转交给胡牌者
+                        use crate::game::settlement::GangSettlement;
+                        gang_pao_refund = Some(GangSettlement::calculate_gang_pao_refund(
+                            discarder_id,
+                            player_id,
+                            refund_amount,
+                        ));
+                        
+                        // 记录退税支付记录（关键：用于追溯）
+                        let refund_payment = InstantPayment::new(
+                            discarder_id,
+                            player_id,
+                            refund_amount,
+                            PaymentReason::GangPaoRefund,
+                            self.state.turn,
+                            Some(tile),
+                        );
+                        self.state.instant_payments.push(refund_payment);
+                        
+                        // 更新玩家杠钱收入（只减去最近一次杠的钱，而不是全部清零）
+                        self.state.players[discarder_id as usize].gang_earnings -= refund_amount;
+                        self.state.players[player_id as usize].add_gang_earnings(refund_amount);
                     }
                 }
             }
