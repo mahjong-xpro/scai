@@ -677,7 +677,7 @@ impl GameEngine {
     /// # 返回
     /// 
     /// 最终结算结果
-    pub fn final_settlement(&self) -> FinalSettlementResult {
+    pub fn final_settlement(&mut self) -> FinalSettlementResult {
         use crate::game::settlement::FinalSettlement;
         use crate::game::scoring::{RootCounter, Settlement, BaseFansCalculator};
         use crate::tile::win_check::WinChecker;
