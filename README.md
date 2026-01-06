@@ -21,11 +21,30 @@ scai/
 │   ├── src/           # 源代码
 │   ├── tests/         # 测试
 │   └── benches/       # 性能基准测试
+├── python/            # Python 训练框架
+│   ├── scai/          # 训练模块
+│   ├── config.yaml    # 配置文件
+│   └── train.py       # 主训练脚本
+├── docs/              # 项目文档（统一管理）
+│   ├── README.md      # 文档索引
+│   ├── architecture/  # 架构文档
+│   ├── training/      # 训练文档
+│   ├── features/      # 功能特性文档
+│   └── history/       # 历史文档（归档）
 ├── checklist.md       # 开发清单
 ├── 方案.md            # 技术方案
 ├── 胡牌规则.md        # 胡牌规则文档
 └── tests/             # Python 测试
 ```
+
+## 文档
+
+📚 **完整文档请查看 [docs/README.md](docs/README.md)**
+
+主要文档：
+- [训练指南](docs/training/TRAINING_GUIDE.md) - 完整的训练流程
+- [课程学习](docs/training/CURRICULUM_LEARNING.md) - 分阶段训练策略
+- [架构总结](docs/architecture/ARCHITECTURE_SUMMARY.md) - 系统架构概览
 
 ## 快速开始
 
