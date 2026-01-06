@@ -21,7 +21,41 @@ pub enum GameError {
     GameOver,
     /// 玩家已离场
     PlayerOut,
+    /// 无效的牌（牌不存在或不在手牌中）
+    InvalidTile,
+    /// 无效的游戏状态（状态不一致或不符合规则）
+    InvalidState,
+    /// 牌墙已空（无法摸牌）
+    WallEmpty,
+    /// 手牌中不包含指定的牌
+    TileNotInHand,
+    /// 定缺未完成（需要先定缺）
+    SuitNotDeclared,
+    /// 动作不合法（不符合游戏规则）
+    IllegalAction,
+    /// 回合数超限（防止无限循环）
+    MaxTurnsExceeded,
 }
+
+impl fmt::Display for GameError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            GameError::InvalidPlayer => write!(f, "无效的玩家 ID"),
+            GameError::InvalidAction => write!(f, "无效的动作"),
+            GameError::GameOver => write!(f, "游戏已结束"),
+            GameError::PlayerOut => write!(f, "玩家已离场"),
+            GameError::InvalidTile => write!(f, "无效的牌"),
+            GameError::InvalidState => write!(f, "无效的游戏状态"),
+            GameError::WallEmpty => write!(f, "牌墙已空"),
+            GameError::TileNotInHand => write!(f, "手牌中不包含指定的牌"),
+            GameError::SuitNotDeclared => write!(f, "定缺未完成"),
+            GameError::IllegalAction => write!(f, "动作不合法（不符合游戏规则）"),
+            GameError::MaxTurnsExceeded => write!(f, "回合数超限"),
+        }
+    }
+}
+
+impl std::error::Error for GameError {}
 
 /// 游戏结果
 #[derive(Debug, Clone)]
@@ -70,7 +104,7 @@ impl GameEngine {
                     // 初始化时直接使用 hand.add_tile，不需要清除过胡锁定
                     self.state.players[i].hand.add_tile(tile);
                 } else {
-                    return Err(GameError::GameOver);
+                    return Err(GameError::WallEmpty);
                 }
             }
         }
@@ -151,7 +185,7 @@ impl GameEngine {
         // 提前检查牌墙是否为空
         let remaining_before = self.wall.remaining_count();
         if remaining_before == 0 {
-            return Err(GameError::GameOver);
+            return Err(GameError::WallEmpty);
         }
         
         // 检查是否是最后一张牌（在抽取前检查）
@@ -176,7 +210,7 @@ impl GameEngine {
         } else {
             // 如果 draw() 返回 None，说明牌墙已空
             self.state.is_last_tile = true;
-            Err(GameError::GameOver)
+            Err(GameError::WallEmpty)
         }
     }
 
@@ -186,7 +220,7 @@ impl GameEngine {
         
         // 检查是否可以出这张牌（自动清除过胡锁定）
         if !player.remove_tile_from_hand(tile) {
-            return Err(GameError::InvalidAction);
+            return Err(GameError::TileNotInHand);
         }
         
         self.state.last_action = Some(Action::Discard { tile });
@@ -217,17 +251,17 @@ impl GameEngine {
         // 检查上一个动作是否是出牌
         let discarded_tile = match self.state.last_action {
             Some(Action::Discard { tile }) => tile,
-            _ => return Err(GameError::InvalidAction),
+            _ => return Err(GameError::InvalidState),
         };
         
         if discarded_tile != tile {
-            return Err(GameError::InvalidAction);
+            return Err(GameError::InvalidTile);
         }
         
         // 执行碰牌（PongHandler::pong 会修改手牌，自动清除过胡锁定）
         let player = &mut self.state.players[player_id as usize];
         if !PongHandler::pong(player, tile) {
-            return Err(GameError::InvalidAction);
+            return Err(GameError::IllegalAction);
         }
         
         self.state.last_action = Some(Action::Pong { tile });
@@ -243,10 +277,10 @@ impl GameEngine {
         let kong_type = if is_concealed {
             // 暗杠
             if KongHandler::can_concealed_kong(player, &tile).is_none() {
-                return Err(GameError::InvalidAction);
+                return Err(GameError::IllegalAction);
             }
             if !KongHandler::concealed_kong(player, tile) {
-                return Err(GameError::InvalidAction);
+                return Err(GameError::IllegalAction);
             }
             crate::game::kong::KongType::Concealed
         } else {
@@ -257,11 +291,11 @@ impl GameEngine {
             } else if let Some(_) = KongHandler::can_direct_kong(player, &tile) {
                 // 直杠
                 if !KongHandler::direct_kong(player, tile) {
-                    return Err(GameError::InvalidAction);
+                    return Err(GameError::IllegalAction);
                 }
                 crate::game::kong::KongType::Direct
             } else {
-                return Err(GameError::InvalidAction);
+                return Err(GameError::IllegalAction);
             }
         };
         
@@ -342,17 +376,17 @@ impl GameEngine {
             if let Action::DeclareSuit { suit } = action {
                 // 执行定缺
                 if !BloodBattleRules::declare_suit(i, suit, &mut self.state) {
-                    return Err(GameError::InvalidAction);
+                    return Err(GameError::IllegalAction);
                 }
             } else {
                 // 如果不是定缺动作，返回错误
-                return Err(GameError::InvalidAction);
+                return Err(GameError::SuitNotDeclared);
             }
         }
         
         // 验证所有玩家都已定缺
         if !BloodBattleRules::all_players_declared(&self.state) {
-            return Err(GameError::InvalidAction);
+            return Err(GameError::SuitNotDeclared);
         }
         
         // 3. 游戏主循环
