@@ -618,99 +618,99 @@ def main():
                 
                 # 1. 收集数据（如果需要）
                 if (iteration + 1) % collect_interval == 0:
-                logger.info("Collecting trajectories...")
-                model_state_dict = model.state_dict()
-                
-                # 根据课程学习阶段更新 collector 配置（如果启用）
-                if collector and curriculum is not None:
-                    current_curriculum = curriculum.get_current_curriculum()
-                    # 更新 enable_win
-                    collector.enable_win = current_curriculum.enable_win
-                    # 更新喂牌配置
-                    if current_curriculum.use_feeding_games:
-                        collector.enable_feeding_games(
-                            enabled=True,
-                            difficulty='easy',
-                            feeding_rate=current_curriculum.feeding_rate,
+                    logger.info("Collecting trajectories...")
+                    model_state_dict = model.state_dict()
+                    
+                    # 根据课程学习阶段更新 collector 配置（如果启用）
+                    if collector and curriculum is not None:
+                        current_curriculum = curriculum.get_current_curriculum()
+                        # 更新 enable_win
+                        collector.enable_win = current_curriculum.enable_win
+                        # 更新喂牌配置
+                        if current_curriculum.use_feeding_games:
+                            collector.enable_feeding_games(
+                                enabled=True,
+                                difficulty='easy',
+                                feeding_rate=current_curriculum.feeding_rate,
+                            )
+                        else:
+                            collector.enable_feeding_games(enabled=False)
+                        # 重新初始化 workers 以应用新配置
+                        collector.initialize_workers(
+                            use_feeding=current_curriculum.use_feeding_games,
+                            enable_win=current_curriculum.enable_win,
                         )
-                    else:
-                        collector.enable_feeding_games(enabled=False)
-                    # 重新初始化 workers 以应用新配置
-                    collector.initialize_workers(
-                        use_feeding=current_curriculum.use_feeding_games,
-                        enable_win=current_curriculum.enable_win,
-                    )
-                    logger.info(f"Updated collector config: enable_win={current_curriculum.enable_win}, "
-                              f"use_feeding={current_curriculum.use_feeding_games}, "
-                              f"feeding_rate={current_curriculum.feeding_rate if current_curriculum.use_feeding_games else 0.0}")
-                
-                # 如果启用了对手池，选择对手
-                if collector and collector.use_opponent_pool:
-                    # 对手池会自动选择对手模型
-                    pass
-                
-                stats = collector.collect(model_state_dict, current_iteration=iteration + 1)
-                logger.log_data_collection(iteration + 1, stats)
-                
-                # 应用数据增强（如果启用）
-                if data_aug and buffer.size() > 0:
-                    aug_config = config.get('data_augmentation', {})
-                    if aug_config.get('enabled', False):
-                        # 对缓冲区中的轨迹进行增强
-                        # 注意：这里简化处理，实际应该在收集时增强
-                        logger.info("Applying data augmentation...")
+                        logger.info(f"Updated collector config: enable_win={current_curriculum.enable_win}, "
+                                  f"use_feeding={current_curriculum.use_feeding_games}, "
+                                  f"feeding_rate={current_curriculum.feeding_rate if current_curriculum.use_feeding_games else 0.0}")
+                    
+                    # 如果启用了对手池，选择对手
+                    if collector and collector.use_opponent_pool:
+                        # 对手池会自动选择对手模型
+                        pass
+                    
+                    stats = collector.collect(model_state_dict, current_iteration=iteration + 1)
+                    logger.log_data_collection(iteration + 1, stats)
+                    
+                    # 应用数据增强（如果启用）
+                    if data_aug and buffer.size() > 0:
+                        aug_config = config.get('data_augmentation', {})
+                        if aug_config.get('enabled', False):
+                            # 对缓冲区中的轨迹进行增强
+                            # 注意：这里简化处理，实际应该在收集时增强
+                            logger.info("Applying data augmentation...")
                 
                 # 2. 训练
                 if buffer.is_ready(min_size=training_config.get('batch_size', 4096)):
-                logger.info("Training model...")
-                
-                # 根据课程学习调整训练参数（如果启用）
-                train_batch_size = training_config.get('batch_size', 4096)
-                train_num_epochs = training_config.get('num_epochs', 10)
-                
-                if curriculum:
-                    # 根据当前阶段调整参数
-                    current_curriculum = curriculum.get_current_curriculum()
-                    # 可以根据阶段调整学习率等参数
-                    # 这里简化处理，实际应该调整 PPO 的学习率
-                
-                losses = trainer.train_step(
-                    batch_size=train_batch_size,
-                    num_epochs=train_num_epochs,
-                )
-                if losses:
-                    logger.log_training_step(iteration + 1, losses)
-                    # 记录到指标日志
-                    if metrics_logger:
-                        metrics_logger.log_loss(
-                            iteration + 1,
-                            losses.get('policy_loss', 0.0),
-                            losses.get('value_loss', 0.0),
-                            losses.get('entropy_loss', 0.0),
-                            losses.get('total_loss', 0.0),
-                        )
+                    logger.info("Training model...")
+                    
+                    # 根据课程学习调整训练参数（如果启用）
+                    train_batch_size = training_config.get('batch_size', 4096)
+                    train_num_epochs = training_config.get('num_epochs', 10)
+                    
+                    if curriculum:
+                        # 根据当前阶段调整参数
+                        current_curriculum = curriculum.get_current_curriculum()
+                        # 可以根据阶段调整学习率等参数
+                        # 这里简化处理，实际应该调整 PPO 的学习率
+                    
+                    losses = trainer.train_step(
+                        batch_size=train_batch_size,
+                        num_epochs=train_num_epochs,
+                    )
+                    if losses:
+                        logger.log_training_step(iteration + 1, losses)
+                        # 记录到指标日志
+                        if metrics_logger:
+                            metrics_logger.log_loss(
+                                iteration + 1,
+                                losses.get('policy_loss', 0.0),
+                                losses.get('value_loss', 0.0),
+                                losses.get('entropy_loss', 0.0),
+                                losses.get('total_loss', 0.0),
+                            )
                 
                 # 3. 评估（如果需要）
                 if (iteration + 1) % eval_interval == 0:
-                logger.info("Evaluating model...")
-                model_id = f"iteration_{iteration + 1}"
-                results = evaluator.evaluate_model(model, model_id, num_games=eval_config.get('num_eval_games', 100))
-                elo_rating = evaluator.get_model_elo(model_id)
-                logger.log_evaluation(iteration + 1, results, elo_rating=elo_rating)
-                
-                # 添加模型到对手池（如果启用）
-                if collector and collector.use_opponent_pool:
-                    collector.add_model_to_pool(model, iteration + 1, elo_rating)
-                    logger.info(f"Added model to opponent pool (Elo: {elo_rating:.2f})")
-                
-                # 记录到指标日志
-                if metrics_logger:
-                    metrics_logger.log_evaluation(
-                        iteration + 1,
-                        results.get('win_rate', 0.0),
-                        results.get('avg_score', 0.0),
-                        elo_rating,
-                    )
+                    logger.info("Evaluating model...")
+                    model_id = f"iteration_{iteration + 1}"
+                    results = evaluator.evaluate_model(model, model_id, num_games=eval_config.get('num_eval_games', 100))
+                    elo_rating = evaluator.get_model_elo(model_id)
+                    logger.log_evaluation(iteration + 1, results, elo_rating=elo_rating)
+                    
+                    # 添加模型到对手池（如果启用）
+                    if collector and collector.use_opponent_pool:
+                        collector.add_model_to_pool(model, iteration + 1, elo_rating)
+                        logger.info(f"Added model to opponent pool (Elo: {elo_rating:.2f})")
+                    
+                    # 记录到指标日志
+                    if metrics_logger:
+                        metrics_logger.log_evaluation(
+                            iteration + 1,
+                            results.get('win_rate', 0.0),
+                            results.get('avg_score', 0.0),
+                            elo_rating,
+                        )
                 
                 # 4. 保存 Checkpoint（如果需要）
                 if (iteration + 1) % save_interval == 0:
