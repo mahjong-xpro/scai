@@ -24,24 +24,76 @@ impl RootCounter {
     /// # 返回
     /// 
     /// 根的总数量（0-4）
+    /// 
+    /// # 实现逻辑
+    /// 
+    /// 使用统一的计数器数组统计所有可见牌（手牌 + 碰/杠），计数为 4 的张数即为根的总数。
+    /// 这样可以避免重复计算，确保逻辑正确性。
+    /// 
+    /// 根的定义：只要手牌中有 4 张相同的牌（无论是否开杠），就是 1 个根。
+    /// 注意：不能将"杠"等同于"根"，因为：
+    /// - 如果手牌中有 4 张相同的牌（未开杠），计算 1 个根
+    /// - 如果 4 张相同的牌被开杠了（变成 `Meld::Kong`），也应该计算 1 个根
+    /// - 同一个 4 张相同的牌，不能既在手牌中计算，又在 `melds` 中计算
     #[inline]
     pub fn count_roots(hand: &Hand, melds: &[Meld]) -> u8 {
+        // 建立计数器数组：27 种牌（3 种花色 × 9 种牌）
+        // 索引计算：suit_index * 9 + (rank - 1)
+        // - 万子：0-8 (0*9 + rank-1)
+        // - 筒子：9-17 (1*9 + rank-1)
+        // - 条子：18-26 (2*9 + rank-1)
+        let mut tile_counts = [0u8; 27];
+        
+        // 辅助函数：将 Tile 转换为索引（0-26）
+        #[inline]
+        fn tile_to_index(tile: &Tile) -> Option<usize> {
+            let suit_idx = match tile.suit() {
+                crate::tile::Suit::Wan => 0,
+                crate::tile::Suit::Tong => 1,
+                crate::tile::Suit::Tiao => 2,
+            };
+            let rank = tile.rank();
+            if rank < 1 || rank > 9 {
+                return None;
+            }
+            Some(suit_idx * 9 + (rank - 1) as usize)
+        }
+        
+        // 统计手牌中的牌
+        for (tile, &count) in hand.tiles_map() {
+            if let Some(idx) = tile_to_index(tile) {
+                if idx < 27 {
+                    tile_counts[idx] += count;
+                }
+            }
+        }
+        
+        // 统计已碰/杠的牌
+        for meld in melds {
+            match meld {
+                Meld::Triplet { .. } => {
+                    // 碰：3 张相同的牌（不是根）
+                    // 注意：碰不是根，只有 4 张相同的牌才是根
+                }
+                Meld::Kong { tile, .. } => {
+                    // 杠：4 张相同的牌（是根）
+                    if let Some(idx) = tile_to_index(tile) {
+                        if idx < 27 {
+                            tile_counts[idx] += 4;
+                        }
+                    }
+                }
+            }
+        }
+        
+        // 统计计数为 4 的张数（即为根的总数）
         let mut root_count = 0u8;
-
-        // 统计手牌中 4 张相同牌的数量
-        for (_, &count) in hand.tiles_map() {
+        for &count in &tile_counts {
             if count == 4 {
                 root_count += 1;
             }
         }
-
-        // 统计已开杠的牌
-        for meld in melds {
-            if matches!(meld, Meld::Kong { .. }) {
-                root_count += 1;
-            }
-        }
-
+        
         // 确保不超过 4 个根
         root_count.min(4)
     }
