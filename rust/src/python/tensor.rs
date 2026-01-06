@@ -137,7 +137,7 @@ pub fn state_to_tensor(
             // 获取该玩家的弃牌（从弃牌历史中筛选，保持原始顺序）
             let player_discards: Vec<_> = game_state.discard_history
                 .iter()
-                .filter(|record| record.player_id == p_id)
+                .filter(|record| record.player_id as usize == p_id)
                 .collect();
             
             // 为该玩家分配 4 个平面（Plane 14 + p_id * 4 到 Plane 17 + p_id * 4）
