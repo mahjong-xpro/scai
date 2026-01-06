@@ -11,7 +11,7 @@ PPO (Proximal Policy Optimization) 算法实现
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple
 import numpy as np
 
 from ..models import DualResNet

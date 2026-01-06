@@ -12,6 +12,7 @@ from collections import defaultdict
 
 from ..models import DualResNet
 from ..utils.checkpoint import CheckpointManager
+from ..selfplay.opponent_pool import OpponentPool
 
 # 导入 Rust 游戏引擎绑定
 try:
@@ -93,12 +94,14 @@ class Evaluator:
         checkpoint_dir: str = './checkpoints',
         elo_threshold: float = 0.55,
         device: str = 'cpu',
+        opponent_pool: Optional[OpponentPool] = None,
     ):
         """
         参数：
         - checkpoint_dir: Checkpoint 目录
         - elo_threshold: Elo 胜率阈值（默认 0.55，即 55%）
         - device: 设备（'cpu' 或 'cuda'）
+        - opponent_pool: 对手池（可选）
         """
         self.checkpoint_dir = checkpoint_dir
         self.elo_threshold = elo_threshold
@@ -109,6 +112,10 @@ class Evaluator:
         
         # Checkpoint 管理器
         self.checkpoint_manager = CheckpointManager(checkpoint_dir)
+        
+        # 对手池（可选）
+        self.opponent_pool = opponent_pool
+        self.use_opponent_pool = opponent_pool is not None
         
         # 评估历史
         self.evaluation_history = []

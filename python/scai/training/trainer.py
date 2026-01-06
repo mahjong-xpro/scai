@@ -132,11 +132,25 @@ class Trainer:
         )
         return checkpoint_path
     
-    def load_checkpoint(self, checkpoint_path: str):
-        """加载 Checkpoint"""
-        checkpoint = self.checkpoint_manager.load_checkpoint(checkpoint_path)
-        self.model.load_state_dict(checkpoint['model_state_dict'])
-        self.ppo.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    def load_checkpoint(self, checkpoint_path: str, strict: bool = True):
+        """
+        加载 Checkpoint
+        
+        参数：
+        - checkpoint_path: Checkpoint 文件路径
+        - strict: 是否严格匹配模型参数（默认 True）
+        
+        返回：
+        - Checkpoint 字典
+        """
+        checkpoint = self.checkpoint_manager.load_checkpoint(
+            checkpoint_path=checkpoint_path,
+            model=self.model,
+            optimizer=self.ppo.optimizer,
+            device=self.device,
+            strict=strict,
+        )
+        # 恢复训练统计
         self.training_stats = checkpoint.get('training_stats', self.training_stats)
         return checkpoint
 

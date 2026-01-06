@@ -75,6 +75,7 @@ class CheckpointManager:
         model: Optional[DualResNet] = None,
         optimizer: Optional[torch.optim.Optimizer] = None,
         device: str = 'cpu',
+        strict: bool = True,
     ) -> Dict:
         """
         加载 Checkpoint
@@ -84,19 +85,100 @@ class CheckpointManager:
         - model: 模型（可选，如果提供则加载状态）
         - optimizer: 优化器（可选，如果提供则加载状态）
         - device: 设备（'cpu' 或 'cuda'）
+        - strict: 是否严格匹配模型参数（默认 True）
         
         返回：
         - Checkpoint 字典
+        
+        抛出：
+        - FileNotFoundError: 如果文件不存在
+        - KeyError: 如果 Checkpoint 缺少必需字段
         """
-        checkpoint = torch.load(checkpoint_path, map_location=device)
+        if not os.path.exists(checkpoint_path):
+            raise FileNotFoundError(f"Checkpoint file not found: {checkpoint_path}")
         
+        try:
+            checkpoint = torch.load(checkpoint_path, map_location=device)
+        except Exception as e:
+            raise RuntimeError(f"Failed to load checkpoint: {e}") from e
+        
+        # 验证必需字段
+        required_fields = ['iteration', 'model_state_dict', 'optimizer_state_dict']
+        for field in required_fields:
+            if field not in checkpoint:
+                raise KeyError(f"Checkpoint missing required field: {field}")
+        
+        # 加载模型状态
         if model is not None:
-            model.load_state_dict(checkpoint['model_state_dict'])
+            try:
+                model.load_state_dict(checkpoint['model_state_dict'], strict=strict)
+            except Exception as e:
+                if strict:
+                    raise RuntimeError(f"Failed to load model state: {e}") from e
+                else:
+                    # 非严格模式：只加载匹配的参数
+                    model_dict = model.state_dict()
+                    checkpoint_dict = checkpoint['model_state_dict']
+                    matched = {k: v for k, v in checkpoint_dict.items() if k in model_dict}
+                    model_dict.update(matched)
+                    model.load_state_dict(model_dict, strict=False)
         
+        # 加载优化器状态
         if optimizer is not None:
-            optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+            try:
+                optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+            except Exception as e:
+                raise RuntimeError(f"Failed to load optimizer state: {e}") from e
         
         return checkpoint
+    
+    def verify_checkpoint(self, checkpoint_path: str) -> Dict[str, bool]:
+        """
+        验证 Checkpoint 的完整性
+        
+        参数：
+        - checkpoint_path: Checkpoint 文件路径
+        
+        返回：
+        - 包含验证结果的字典
+        """
+        result = {
+            'exists': False,
+            'readable': False,
+            'has_required_fields': False,
+            'has_model_state': False,
+            'has_optimizer_state': False,
+            'has_training_stats': False,
+            'has_metadata': False,
+            'has_timestamp': False,
+        }
+        
+        # 检查文件是否存在
+        if not os.path.exists(checkpoint_path):
+            return result
+        
+        result['exists'] = True
+        
+        try:
+            # 尝试加载
+            checkpoint = torch.load(checkpoint_path, map_location='cpu')
+            result['readable'] = True
+            
+            # 检查必需字段
+            required_fields = ['iteration', 'model_state_dict', 'optimizer_state_dict']
+            result['has_required_fields'] = all(field in checkpoint for field in required_fields)
+            
+            # 检查各个字段
+            result['has_model_state'] = 'model_state_dict' in checkpoint and len(checkpoint['model_state_dict']) > 0
+            result['has_optimizer_state'] = 'optimizer_state_dict' in checkpoint and len(checkpoint['optimizer_state_dict']) > 0
+            result['has_training_stats'] = 'training_stats' in checkpoint
+            result['has_metadata'] = 'metadata' in checkpoint
+            result['has_timestamp'] = 'timestamp' in checkpoint
+            
+        except Exception:
+            pass
+        
+        return result
     
     def list_checkpoints(self) -> list:
         """
