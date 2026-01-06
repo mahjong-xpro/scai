@@ -138,6 +138,9 @@ mkdir -p coach_documents
 - ⚠️ 确保有足够的磁盘空间（checkpoints 和 logs）
 - ⚠️ 确保有足够的内存（Ray workers）
 - ⚠️ 如果使用 GPU，确保 CUDA 可用
+- ⚠️ 配置 GPU 设备（在 `config.yaml` 中设置 `gpu.device_ids`）
+  - 8 卡服务器使用前 4 张：`device_ids: [0, 1, 2, 3]`
+  - 详细配置请参考 [GPU 配置指南](docs/setup/GPU_CONFIGURATION.md)
 
 ---
 

@@ -23,7 +23,7 @@ import numpy as np
 import signal
 import shutil
 import time
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 from pathlib import Path
 from datetime import datetime
 
@@ -89,8 +89,16 @@ def load_config(config_path: str) -> Dict:
     return config
 
 
-def create_model(config: Dict, device: str = 'cpu', logger=None) -> DualResNet:
-    """创建模型"""
+def create_model(config: Dict, device: str = 'cpu', logger=None, device_id: int = 0) -> DualResNet:
+    """
+    创建模型
+    
+    参数：
+    - config: 配置字典
+    - device: 设备字符串（'cpu' 或 'cuda'）
+    - logger: 日志记录器（可选）
+    - device_id: GPU 设备 ID（如果使用多 GPU，默认 0）
+    """
     model_config = config.get('model', {})
     backbone_config = model_config.get('backbone', {})
     policy_config = model_config.get('policy_head', {})
@@ -105,6 +113,17 @@ def create_model(config: Dict, device: str = 'cpu', logger=None) -> DualResNet:
         hidden_dim=value_config.get('hidden_size', 256),
     )
     
+    # 如果使用多 GPU，可以在这里设置 DataParallel 或 DistributedDataParallel
+    # 目前先使用单 GPU 或 CPU
+    if device.startswith('cuda') and torch.cuda.device_count() > 1:
+        # 可以选择使用 DataParallel（单机多卡）
+        # model = torch.nn.DataParallel(model, device_ids=list(range(torch.cuda.device_count())))
+        # 或者使用指定的设备
+        if device_id < torch.cuda.device_count():
+            device = f'cuda:{device_id}'
+            if logger:
+                logger.info(f"Using specific GPU: {device}")
+    
     model = model.to(device)
     num_params = sum(p.numel() for p in model.parameters())
     if logger:
@@ -115,22 +134,6 @@ def create_model(config: Dict, device: str = 'cpu', logger=None) -> DualResNet:
     return model
 
 
-def initialize_ray(config: Dict):
-    """初始化 Ray 集群"""
-    if not HAS_RAY:
-        raise ImportError("Ray is required for distributed training. Install with: pip install ray")
-    
-    ray_config = config.get('ray', {})
-    if ray_config.get('init', True):
-        if not ray.is_initialized():
-            ray.init(
-                num_cpus=ray_config.get('num_cpus', None),
-                num_gpus=ray_config.get('num_gpus', 0),
-                ignore_reinit_error=True,
-            )
-            logger.info("Ray initialized")
-        else:
-            logger.info("Ray already initialized")
 
 
 def main():
@@ -164,16 +167,25 @@ def main():
     
     logger.info(f"Loaded config from {config_path}")
     
-    # 设备选择
+    # GPU 配置（必须在 Ray 初始化之前）
+    device, num_gpus = setup_gpu_config(config, logger)
+    
+    # 如果命令行指定了设备，覆盖配置
     if args.device:
         device = args.device
-    else:
-        device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    logger.info(f"Using device: {device}")
+        if device == 'cuda' and not torch.cuda.is_available():
+            logger.warning("CUDA not available, falling back to CPU")
+            device = 'cpu'
+            num_gpus = 0
+        elif device == 'cuda':
+            num_gpus = torch.cuda.device_count()
+        logger.info(f"Using device from command line: {device}")
     
-    # 初始化 Ray（如果需要）
+    logger.info(f"Final device: {device}, Available GPUs: {num_gpus}")
+    
+    # 初始化 Ray（如果需要，在 GPU 配置之后）
     if not args.eval_only:
-        initialize_ray(config)
+        initialize_ray(config, num_gpus=num_gpus, logger=logger)
     
     # 创建模型
     model = create_model(config, device, logger)
