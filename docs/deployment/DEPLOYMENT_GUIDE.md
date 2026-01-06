@@ -250,35 +250,68 @@ cargo check
 
 ### 3. 构建 Python 扩展
 
-#### 方法 1: 开发模式（推荐用于开发）
+#### 方法 1: 使用 maturin（如果可用，推荐）
 
 ```bash
 # 确保虚拟环境已激活
 source ../.venv/bin/activate
 
-# 使用 maturin 开发模式构建（会安装到虚拟环境）
-maturin develop
+# 安装 maturin（如果未安装）
+cargo install maturin
 
-# 或者指定 release 模式（更快但构建时间更长）
+# 开发模式构建（会安装到虚拟环境）
 maturin develop --release
 ```
 
-#### 方法 2: 构建 wheel 包（推荐用于生产）
+#### 方法 2: 手动编译脚本（推荐，不需要 maturin）⭐
+
+如果无法安装 maturin，使用手动构建脚本：
 
 ```bash
-# 构建 wheel 包
-maturin build --release
+# 确保虚拟环境已激活
+source ../.venv/bin/activate
 
-# 安装 wheel 包
-pip install target/wheels/scai_engine-*.whl
+# 运行手动构建脚本
+chmod +x build_manual.sh
+./build_manual.sh
 ```
 
-#### 方法 3: 直接安装（最简单）
+**优点**: 
+- 不需要 maturin
+- 只需要 Rust 和 Python
+- 自动化程度高
+
+详细说明请参考: [Rust 构建替代方案](../deployment/RUST_BUILD_ALTERNATIVES.md)
+
+#### 方法 3: 使用 setuptools
 
 ```bash
-# 从源码直接安装
-pip install -e ../rust
+# 确保虚拟环境已激活
+source ../.venv/bin/activate
+
+# 使用 setuptools 构建脚本
+python3 build_with_setuptools.py build_ext --inplace
+python3 build_with_setuptools.py install
 ```
+
+#### 方法 4: 完全手动编译
+
+如果以上方法都不可用，可以完全手动编译：
+
+```bash
+# 1. 编译 Rust 库
+cargo build --release --features python
+
+# 2. 查找生成的库文件
+# Linux:
+find target/release -name "libscai_engine.so"
+# macOS:
+find target/release -name "libscai_engine.dylib"
+
+# 3. 手动安装（参考 RUST_BUILD_ALTERNATIVES.md）
+```
+
+详细步骤请参考: [Rust 构建替代方案](../deployment/RUST_BUILD_ALTERNATIVES.md)
 
 ### 4. 验证 Rust 扩展
 
@@ -286,13 +319,22 @@ pip install -e ../rust
 # 在 Python 中测试
 python -c "import scai_engine; print('✓ scai_engine 导入成功')"
 python -c "import scai_engine; engine = scai_engine.PyGameEngine(); print('✓ 游戏引擎创建成功')"
+python -c "
+import scai_engine
+engine = scai_engine.PyGameEngine()
+engine.initialize()
+print('✓ 引擎初始化成功')
+"
 ```
 
 如果出现错误，检查：
 - Rust 是否正确安装
-- maturin 是否正确安装
+- Python 版本是否匹配 (3.8+)
 - 虚拟环境是否激活
 - 系统依赖是否完整
+- 库文件路径是否正确
+
+**如果 maturin 安装失败，强烈推荐使用方法 2（手动编译脚本）**
 
 ---
 
