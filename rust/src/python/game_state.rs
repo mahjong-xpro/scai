@@ -242,6 +242,15 @@ impl PyGameState {
         visibility
     }
 
+    /// 克隆游戏状态（深拷贝）
+    /// 
+    /// 用于 ISMCTS 等需要创建状态副本的场景
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+        }
+    }
+
     /// 转换为字符串（用于调试）
     fn __repr__(&self) -> String {
         format!("PyGameState(turn={}, current_player={}, out_count={})", 

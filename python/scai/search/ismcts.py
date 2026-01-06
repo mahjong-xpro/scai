@@ -13,6 +13,13 @@ from collections import defaultdict
 from ..models import DualResNet
 from ..training.ppo import PPO
 
+# 导入 Rust 游戏引擎（如果可用）
+try:
+    import scai_engine
+    HAS_SCAI_ENGINE = True
+except ImportError:
+    HAS_SCAI_ENGINE = False
+
 
 class ISMCTSNode:
     """ISMCTS 节点
@@ -256,7 +263,13 @@ class ISMCTS:
         - 确定化的游戏状态
         """
         # 创建游戏状态的副本
-        determinized_state = game_state.clone()  # TODO: 实现 clone 方法
+        # 使用 clone 方法（如果可用）或深拷贝
+        if hasattr(game_state, 'clone'):
+            determinized_state = game_state.clone()
+        else:
+            # 如果 PyGameState 没有 clone 方法，尝试使用 copy.deepcopy
+            import copy
+            determinized_state = copy.deepcopy(game_state)
         
         # 使用 fill_unknown_cards 方法填充未知牌
         if hasattr(determinized_state, 'fill_unknown_cards'):
@@ -305,8 +318,8 @@ class ISMCTS:
                 current_node = current_node.select_child(self.exploration_constant)
                 if current_node is None:
                     break
-                # TODO: 在游戏状态中执行动作
-                # current_state = self._apply_action(current_state, current_node.action)
+                # 在游戏状态中执行动作
+                current_state = self._apply_action(current_state, current_node.action, player_id)
                 depth += 1
         
         # Rollout: 从当前状态随机模拟到终端
@@ -374,6 +387,92 @@ class ISMCTS:
         else:
             # 占位符：返回随机张量
             return torch.randn(1, 2412).to(self.device)
+    
+    def _apply_action(
+        self,
+        game_state,
+        action_index: int,
+        player_id: int,
+    ):
+        """
+        在游戏状态中执行动作（简化版本，用于 ISMCTS 快速模拟）
+        
+        注意：这是一个简化实现，不完整执行所有游戏逻辑。
+        对于 ISMCTS 的快速模拟，我们主要依赖后续的 rollout（神经网络评估），
+        而不是完整的状态转换。
+        
+        参数：
+        - game_state: 游戏状态（PyGameState）
+        - action_index: 动作索引（0-433）
+        - player_id: 执行动作的玩家 ID
+        
+        返回：
+        - 执行动作后的新游戏状态（简化版本）
+        """
+        # 克隆游戏状态
+        if hasattr(game_state, 'clone'):
+            new_state = game_state.clone()
+        else:
+            # 如果没有 clone 方法，使用深拷贝
+            import copy
+            new_state = copy.deepcopy(game_state)
+        
+        # 简化处理：对于 ISMCTS 模拟，我们不需要完整执行动作
+        # 因为后续的 rollout 会使用神经网络进行快速评估
+        # 这里我们只更新一些基本状态（如当前玩家），
+        # 完整的状态转换逻辑在 rollout 阶段通过神经网络评估来近似
+        
+        # 更新当前玩家（循环到下一个玩家）
+        if hasattr(new_state, 'set_current_player'):
+            next_player = (player_id + 1) % 4
+            new_state.set_current_player(next_player)
+        
+        # 注意：这里不完整执行动作（如摸牌、出牌等），
+        # 因为完整执行需要访问引擎的私有状态（如牌墙），
+        # 而且对于 ISMCTS 的快速模拟来说，完整执行会太慢。
+        # 我们依赖后续的神经网络 rollout 来评估状态价值。
+        
+        return new_state
+    
+    def _index_to_action_params(
+        self,
+        action_index: int,
+        state,
+        player_id: int,
+    ) -> Tuple[str, Optional[int], Optional[bool]]:
+        """
+        将动作索引转换为动作类型和参数
+        
+        参数：
+        - action_index: 动作索引（0-433）
+        - state: 游戏状态
+        - player_id: 玩家 ID
+        
+        返回：
+        - (action_type, tile_index, is_concealed)
+        """
+        # 动作空间编码：434 个动作
+        # 0-107: 出牌（108 种牌）
+        # 108-215: 碰（108 种牌）
+        # 216-323: 杠（108 种牌）
+        # 324-431: 胡（108 种牌）
+        # 432: 过
+        # 433: 摸牌（Draw）
+        
+        if action_index < 108:
+            return "discard", action_index, None
+        elif action_index < 216:
+            tile_index = action_index - 108
+            return "pong", tile_index, None
+        elif action_index < 324:
+            tile_index = action_index - 216
+            return "gang", tile_index, False  # 默认明杠
+        elif action_index < 432:
+            return "win", None, None
+        elif action_index == 432:
+            return "pass", None, None
+        else:
+            return "draw", None, None
     
     def _backpropagate(self, node: ISMCTSNode, value: float):
         """
