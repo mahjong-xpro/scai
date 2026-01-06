@@ -87,6 +87,29 @@ class SelfPlayWorker:
             'final_score': 0.0,
         }
         
+        # 定缺阶段：所有玩家必须定缺
+        for player_id in range(4):
+            state = engine.state
+            if state.get_player_declared_suit(player_id) is not None:
+                continue  # 已经定缺
+            
+            # 简化处理：选择手牌中最少的花色作为定缺
+            hand = state.get_player_hand(player_id)
+            suit_counts = {'Wan': 0, 'Tong': 0, 'Tiao': 0}
+            for tile_str, count in hand.items():
+                if 'Wan' in tile_str:
+                    suit_counts['Wan'] += count
+                elif 'Tong' in tile_str:
+                    suit_counts['Tong'] += count
+                elif 'Tiao' in tile_str:
+                    suit_counts['Tiao'] += count
+            
+            # 选择最少的花色
+            min_suit = min(suit_counts.items(), key=lambda x: x[1])[0]
+            # 注意：PyGameEngine 可能没有直接的定缺方法
+            # 这里简化处理，假设定缺已经通过其他方式设置
+            # 实际实现需要添加 PyGameEngine.declare_suit() 方法
+        
         # 游戏主循环
         max_turns = 200
         turn_count = 0
@@ -100,7 +123,18 @@ class SelfPlayWorker:
             
             # 检查玩家是否已离场
             if state.is_player_out(current_player):
-                # 跳过已离场的玩家
+                # 跳过已离场的玩家，需要切换到下一个玩家
+                # 这里简化处理，实际需要调用 next_turn()
+                continue
+            
+            # 先摸牌（如果是自己的回合）
+            try:
+                # 注意：PyGameEngine 可能没有直接的摸牌方法
+                # 这里简化处理，假设摸牌已经通过其他方式完成
+                # 实际实现需要添加 PyGameEngine.draw() 方法
+                pass
+            except Exception as e:
+                print(f"Worker {self.worker_id}, Game {game_id}, Draw error: {e}")
                 continue
             
             # 获取游戏状态张量

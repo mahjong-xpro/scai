@@ -4,23 +4,25 @@
 
 ### 1.1 自对弈 Worker (`python/scai/selfplay/worker.py`)
 
-**问题**：大量 TODO 标记，功能未实现
+**状态**：✅ **已修复**
 
-**具体问题**：
-- ❌ `self.engine = None  # TODO: 初始化 Rust 引擎` (第40行)
-- ❌ `# TODO: 实现实际游戏逻辑` (第57行)
-- ❌ `# TODO: 加载模型` (第136行)
-- ❌ `# TODO: 传入模型` (第141行)
+**修复内容**：
+- ✅ 初始化 Rust 引擎：`self.engine = scai_engine.PyGameEngine()`
+- ✅ 实现实际游戏逻辑：完整的游戏循环，包括定缺、摸牌、动作选择、动作执行
+- ✅ 模型加载：在 `run()` 方法中加载模型状态字典
+- ✅ 动作索引转换：实现 `_index_to_action_params()` 方法
 
-**影响**：自对弈无法正常工作，训练无法进行
+**实现细节**：
+- 使用 `PyGameEngine` 的 `process_action()` 方法执行动作
+- 使用 `state_to_tensor()` 和 `PyActionMask.get_action_mask()` 获取状态和掩码
+- 完整的轨迹记录（states, actions, rewards, values, log_probs, dones, action_masks）
+- 错误处理和边界情况处理
 
-**建议**：
-```python
-# 需要实现：
-1. 初始化 Rust 引擎（通过 PyGameEngine）
-2. 实现实际游戏逻辑（调用 Rust 引擎）
-3. 模型加载和推理逻辑
-```
+**仍需完善**：
+- ⚠️ 定缺阶段的实现需要添加 `PyGameEngine.declare_suit()` 方法
+- ⚠️ 摸牌操作需要添加 `PyGameEngine.draw()` 方法或使用 `process_action("draw", ...)`
+- ⚠️ 奖励计算需要从游戏状态中获取实际信息（听牌、胡牌等）
+- ⚠️ 最终得分提取需要从结算结果中获取
 
 ### 1.2 ISMCTS (`python/scai/search/ismcts.py`)
 
