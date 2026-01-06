@@ -5,7 +5,6 @@ mod tests {
     use scai_engine::tile::{Tile, Suit};
     use scai_engine::game::payment::{PaymentTracker, PaymentReason};
     use scai_engine::game::blood_battle::BloodBattleRules;
-    use scai_engine::game::state::DiscardRecord;
 
     /// 测试杠上炮"呼叫转移"：A 杠了 B 的牌，然后 A 点炮给 C
     /// 应该退还最近一次杠的钱给 C
@@ -273,24 +272,34 @@ mod tests {
         assert!(gang_result.is_ok(), "A 应该可以直杠 B 的 1 万");
         
         // 检查支付记录：应该有从 B 到 A 的支付记录
-        let kong_payments_from_b: Vec<_> = engine.state.instant_payments
-            .iter()
-            .filter(|p| p.from_player == 1 && p.to_player == 0 && p.is_kong_payment())
-            .collect();
+        let kong_payments_from_b: Vec<_> = {
+            engine.state.instant_payments
+                .iter()
+                .filter(|p| p.from_player == 1 && p.to_player == 0 && p.is_kong_payment())
+                .collect()
+        };
         
         assert!(!kong_payments_from_b.is_empty(), "应该有从 B 到 A 的杠钱支付记录");
         
         // 使用 PaymentTracker::get_latest_kong_payers 能找到 B
-        let latest_kong_payers = PaymentTracker::get_latest_kong_payers(
-            &engine.state.instant_payments,
-            0,
-        );
+        let latest_kong_payers = {
+            PaymentTracker::get_latest_kong_payers(
+                &engine.state.instant_payments,
+                0,
+            )
+        };
         
         assert!(!latest_kong_payers.is_empty(), "应该能找到最近一次杠的支付者");
         assert!(
             latest_kong_payers.iter().any(|(payer_id, _)| *payer_id == 1),
             "最近一次杠的支付者应该包括 B"
         );
+        
+        // 记录 B 的支付金额（在借用之前）
+        let b_payment_amount: i32 = kong_payments_from_b
+            .iter()
+            .map(|p| p.amount)
+            .sum();
         
         // A 出牌点炮给 C
         engine.state.current_player = 0;
@@ -318,11 +327,6 @@ mod tests {
         
         // 验证追溯性：退税金额应该等于 B 支付给 A 的金额
         let refund_amount: i32 = refund_payments
-            .iter()
-            .map(|p| p.amount)
-            .sum();
-        
-        let b_payment_amount: i32 = kong_payments_from_b
             .iter()
             .map(|p| p.amount)
             .sum();
