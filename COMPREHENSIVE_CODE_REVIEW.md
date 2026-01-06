@@ -282,13 +282,34 @@
 
 #### 3.1.1 呼叫转移测试
 
-**位置**：`rust/tests/call_transfer_test.rs`
+**状态**：✅ **已实现**
 
-**问题**：
-- ❌ 所有测试用例都是 TODO，未实现
+**实现内容**：
+1. ✅ **`test_gang_pao_call_transfer`**：
+   - 测试基本的杠上炮"呼叫转移"逻辑
+   - 验证 A 杠了 B 的牌后，A 点炮给 C 时，应该退还最近一次杠的钱给 C
+   - 验证 `instant_payments` 中有 `GangPaoRefund` 记录
+   - 验证 A 的 `gang_earnings` 正确减少，C 的 `gang_earnings` 正确增加
+   - 验证退税金额等于最近一次杠的收入
 
-**建议**：
-- 实现完整的测试用例，验证杠上炮退税逻辑
+2. ✅ **`test_gang_pao_multiple_kongs`**：
+   - 测试多次杠牌后的杠上炮逻辑
+   - 验证 A 杠了 B 和 C 的牌后，A 点炮给 D 时，只退还最近一次杠的钱（不是所有杠钱）
+   - 验证 A 的 `gang_earnings` 只减少最近一次杠的收入，而不是清零
+   - 验证 A 还保留第一次杠的收入
+
+3. ✅ **`test_gang_pao_traceability`**：
+   - 测试杠上炮的追溯性
+   - 验证使用 `PaymentTracker::get_latest_kong_payers` 能找到原始支付者
+   - 验证 `instant_payments` 中有从 B 到 A 的支付记录
+   - 验证 `instant_payments` 中有从 A 到 C 的退税记录（`GangPaoRefund`）
+   - 验证退税金额至少包括原始支付者的支付金额
+
+**测试覆盖**：
+- ✅ 基本杠上炮退税逻辑
+- ✅ 多次杠牌后的退税逻辑（只退最近一次）
+- ✅ 支付记录的追溯性
+- ✅ 杠钱收入的正确更新
 
 #### 3.1.2 边界情况测试
 
