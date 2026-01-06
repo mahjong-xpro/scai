@@ -367,22 +367,6 @@ impl ActionMask {
         action_mask[action_index]
     }
 
-    /// 获取所有可能的牌（用于索引映射）
-    fn all_tiles() -> Vec<Tile> {
-        let mut tiles = Vec::with_capacity(108);
-        for suit in [Suit::Wan, Suit::Tong, Suit::Tiao] {
-            for rank in 1..=9 {
-                let tile = match suit {
-                    Suit::Wan => Tile::Wan(rank),
-                    Suit::Tong => Tile::Tong(rank),
-                    Suit::Tiao => Tile::Tiao(rank),
-                };
-                tiles.push(tile);
-            }
-        }
-        tiles
-    }
-
     /// 将牌映射到索引（0-107）
     /// 
     /// # 参数
