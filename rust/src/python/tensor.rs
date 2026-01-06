@@ -14,14 +14,25 @@ use crate::python::action_mask::PyActionMask;
 /// 
 /// 核心特征平面（前 14 个）：
 /// - Plane 0-3: 自身手牌（One-hot 表示 1-4 张）
-/// - Plane 4-10: 三个对手的弃牌（带顺序感，每个对手约 2-3 个平面）
+/// - Plane 4-10: 三个对手的弃牌（带顺序感，每个对手约 2-3 个平面，向后兼容）
 /// - Plane 11: 场上剩余牌堆计数
 /// - Plane 12: 定缺掩码
 /// - Plane 13: 每张牌在场上已出现的张数（0-4，归一化到 [0, 1]）- **墙内残余牌感**
 /// 
+/// 弃牌序列特征（关键特征，用于识别"做牌"意图）：
+/// - Plane 14-17: 玩家0的弃牌序列（最近4次，最旧的在前，最新的在后）
+/// - Plane 18-21: 玩家1的弃牌序列（最近4次）
+/// - Plane 22-25: 玩家2的弃牌序列（最近4次）
+/// - Plane 26-29: 玩家3的弃牌序列（最近4次）
+/// 
+/// 说明：这是 AI 识别"做牌"意图的关键特征。例如：
+/// - 先打 9 万再打 1 万 → 可能在做清一色（先打边张，保留中张）
+/// - 先打 5 万，再打 5 万 → 可能在做七对（打掉多余的中张）
+/// - 先打 1 万，再打 9 万 → 可能在做全带幺（保留中张，打掉边张）
+/// 
 /// Oracle 特征平面（仅训练时使用）：
-/// - Plane 14-25: 对手暗牌（手牌）- 仅在 use_oracle=true 时填充
-/// - Plane 46-55: 牌堆余牌分布 - 仅在 use_oracle=true 时填充
+/// - Plane 30-41: 对手暗牌（手牌）- 仅在 use_oracle=true 时填充
+/// - Plane 63: 牌堆余牌分布汇总 - 仅在 use_oracle=true 时填充
 /// 
 /// # 参数
 /// 
@@ -72,7 +83,7 @@ pub fn state_to_tensor(
             }
         }
         
-        // Plane 4-10: 三个对手的弃牌（带顺序感）
+        // Plane 4-10: 三个对手的弃牌（带顺序感，保留向后兼容）
         // 分配：对手 1 用 Plane 4-5，对手 2 用 Plane 6-7，对手 3 用 Plane 8-9，Plane 10 用于最近弃牌
         let mut opponent_idx = 0;
         let mut opponent_planes = [4, 6, 8]; // 每个对手的起始平面
@@ -107,6 +118,46 @@ pub fn state_to_tensor(
             let (suit_idx, rank_idx) = tile_to_indices(&last_discard.tile);
             // 标记最近弃牌的位置（全局视角，不区分玩家）
             data[[10, suit_idx, rank_idx]] = 1.0;
+        }
+        
+        // Plane 14-29: 每个玩家的弃牌序列（完整顺序，关键特征）
+        // 分配：每个玩家 4 个平面，记录最近 4 次弃牌
+        // - Plane 14-17: 玩家0的弃牌序列（最旧的在前，最新的在后）
+        // - Plane 18-21: 玩家1的弃牌序列
+        // - Plane 22-25: 玩家2的弃牌序列
+        // - Plane 26-29: 玩家3的弃牌序列
+        // 
+        // 这是 AI 识别"做牌"意图的关键特征
+        // 例如：先打 9 万再打 1 万 → 可能在做清一色
+        for p_id in 0..4 {
+            // 获取该玩家的弃牌（从弃牌历史中筛选，保持原始顺序）
+            let player_discards: Vec<_> = game_state.discard_history
+                .iter()
+                .filter(|record| record.player_id == p_id)
+                .collect();
+            
+            // 为该玩家分配 4 个平面（Plane 14 + p_id * 4 到 Plane 17 + p_id * 4）
+            let base_plane = 14 + p_id * 4;
+            
+            // 记录最近 4 次弃牌（最旧的在前，最新的在后）
+            // 例如：如果玩家弃了 [1万, 2万, 3万, 4万, 5万]（按时间顺序）
+            // 则记录 [2万, 3万, 4万, 5万]（最近4次，最旧的2万在第一个平面）
+            let recent_discards: Vec<_> = player_discards
+                .iter()
+                .rev() // 反转，最新的在前
+                .take(4) // 取最近4次
+                .rev() // 再反转回来，最旧的在前
+                .collect();
+            
+            for (i, discard_record) in recent_discards.iter().enumerate() {
+                if base_plane + i < 64 {
+                    let (suit_idx, rank_idx) = tile_to_indices(&discard_record.tile);
+                    // 记录弃牌，同时记录时间信息（归一化到 [0, 1]）
+                    // 时间越近，值越大（帮助 AI 理解时间顺序）
+                    let time_weight = 1.0 - (i as f32 / 4.0); // 最新的为 1.0，最旧的为 0.75
+                    data[[base_plane + i, suit_idx, rank_idx]] = time_weight;
+                }
+            }
         }
         
         // Plane 11: 场上剩余牌堆计数
@@ -232,7 +283,7 @@ pub fn state_to_tensor(
             plane_idx += 1;
         }
         
-        // 平面 30-33: 玩家状态（是否离场）
+        // 平面 46-49: 玩家状态（是否离场）
         for p_id in 0..4 {
             if game_state.players[p_id].is_out {
                 for suit in 0..3 {
@@ -246,7 +297,7 @@ pub fn state_to_tensor(
             plane_idx += 1;
         }
         
-        // 平面 34-37: 听牌状态
+        // 平面 50-53: 听牌状态
         for p_id in 0..4 {
             if game_state.players[p_id].is_ready {
                 for suit in 0..3 {
@@ -260,7 +311,7 @@ pub fn state_to_tensor(
             plane_idx += 1;
         }
         
-        // 平面 38-41: 回合信息
+        // 平面 54-57: 回合信息
         let turn_planes = [
             (game_state.turn % 4) as usize,
             ((game_state.turn / 4) % 4) as usize,
@@ -268,19 +319,19 @@ pub fn state_to_tensor(
             ((game_state.turn / 64) % 4) as usize,
         ];
         for (i, &plane) in turn_planes.iter().enumerate() {
-            if 38 + i < 64 {
+            if 54 + i < 64 {
                 for suit in 0..3 {
                     for rank in 0..9 {
                         if plane > 0 {
-                            data[[38 + i, suit, rank]] = plane as f32 / 4.0;
+                            data[[54 + i, suit, rank]] = plane as f32 / 4.0;
                         }
                     }
                 }
             }
         }
-        plane_idx = 42;
+        plane_idx = 58;
         
-        // 平面 42-45: 当前玩家信息
+        // 平面 58-61: 当前玩家信息
         for p_id in 0..4 {
             if p_id == game_state.current_player as usize {
                 for suit in 0..3 {
@@ -294,18 +345,20 @@ pub fn state_to_tensor(
             plane_idx += 1;
         }
         
-        // 平面 46: 最后一张牌标记
+        // 平面 62: 最后一张牌标记
         if game_state.is_last_tile {
             for suit in 0..3 {
                 for rank in 0..9 {
-                    if 46 < 64 {
-                        data[[46, suit, rank]] = 1.0;
+                    if 62 < 64 {
+                        data[[62, suit, rank]] = 1.0;
                     }
                 }
             }
         }
         
-        // 平面 47-56: Oracle 特征 - 牌堆余牌分布（仅训练时使用）
+        // 平面 63: Oracle 特征 - 牌堆余牌分布（仅训练时使用，简化版本）
+        // 注意：由于平面空间有限，这里只记录一个汇总值
+        // 完整的牌堆余牌分布需要更多平面，可以在需要时扩展
         // 显示每张牌在牌堆中剩余的数量（0-4）
         if use_oracle {
             if let Some(wall_dist) = wall_tile_distribution {
