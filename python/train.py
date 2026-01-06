@@ -527,37 +527,37 @@ def main():
                 except Exception as e:
                     logger.error(f"Failed to save checkpoint: {e}")
                 break
-        
-        try:
-            logger.info(f"\n{'='*60}")
-            logger.info(f"Iteration {iteration + 1}/{num_iterations}")
-            logger.info(f"{'='*60}")
             
-            # 更新仪表板状态（如果启用）
-            if HAS_COACH and curriculum is not None:
-                current_metrics = {
-                    'iteration': iteration + 1,
-                    'buffer_size': buffer.size(),
-                }
-                if metrics_logger:
-                    recent_metrics = metrics_logger.get_recent_metrics()
-                    current_metrics.update(recent_metrics)
+            try:
+                logger.info(f"\n{'='*60}")
+                logger.info(f"Iteration {iteration + 1}/{num_iterations}")
+                logger.info(f"{'='*60}")
                 
-                training_stats = {
-                    'buffer_size': buffer.size(),
-                    'buffer_ready': buffer.is_ready(min_size=training_config.get('batch_size', 4096)),
-                }
+                # 更新仪表板状态（如果启用）
+                if HAS_COACH and curriculum is not None:
+                    current_metrics = {
+                        'iteration': iteration + 1,
+                        'buffer_size': buffer.size(),
+                    }
+                    if metrics_logger:
+                        recent_metrics = metrics_logger.get_recent_metrics()
+                        current_metrics.update(recent_metrics)
+                    
+                    training_stats = {
+                        'buffer_size': buffer.size(),
+                        'buffer_ready': buffer.is_ready(min_size=training_config.get('batch_size', 4096)),
+                    }
+                    
+                    update_training_status(
+                        curriculum=curriculum,
+                        current_iteration=iteration + 1,
+                        total_iterations=num_iterations,
+                        metrics=current_metrics,
+                        training_stats=training_stats,
+                    )
                 
-                update_training_status(
-                    curriculum=curriculum,
-                    current_iteration=iteration + 1,
-                    total_iterations=num_iterations,
-                    metrics=current_metrics,
-                    training_stats=training_stats,
-                )
-            
-            # 0. 课程学习阶段调整（如果启用）
-            if curriculum is not None:
+                # 0. 课程学习阶段调整（如果启用）
+                if curriculum is not None:
                 curriculum_config = config.get('curriculum_learning', {})
                 if (iteration + 1) % curriculum_config.get('llm_coach_frequency', 100) == 0:
                     # 获取当前性能指标
@@ -615,9 +615,9 @@ def main():
                         new_use_adversarial = curriculum.should_use_adversarial()
                         if new_use_adversarial:
                             logger.info("Adversarial training should be enabled for this stage")
-            
-            # 1. 收集数据（如果需要）
-            if (iteration + 1) % collect_interval == 0:
+                
+                # 1. 收集数据（如果需要）
+                if (iteration + 1) % collect_interval == 0:
                 logger.info("Collecting trajectories...")
                 model_state_dict = model.state_dict()
                 
@@ -659,9 +659,9 @@ def main():
                         # 对缓冲区中的轨迹进行增强
                         # 注意：这里简化处理，实际应该在收集时增强
                         logger.info("Applying data augmentation...")
-            
-            # 2. 训练
-            if buffer.is_ready(min_size=training_config.get('batch_size', 4096)):
+                
+                # 2. 训练
+                if buffer.is_ready(min_size=training_config.get('batch_size', 4096)):
                 logger.info("Training model...")
                 
                 # 根据课程学习调整训练参数（如果启用）
@@ -689,9 +689,9 @@ def main():
                             losses.get('entropy_loss', 0.0),
                             losses.get('total_loss', 0.0),
                         )
-            
-            # 3. 评估（如果需要）
-            if (iteration + 1) % eval_interval == 0:
+                
+                # 3. 评估（如果需要）
+                if (iteration + 1) % eval_interval == 0:
                 logger.info("Evaluating model...")
                 model_id = f"iteration_{iteration + 1}"
                 results = evaluator.evaluate_model(model, model_id, num_games=eval_config.get('num_eval_games', 100))
@@ -711,26 +711,26 @@ def main():
                         results.get('avg_score', 0.0),
                         elo_rating,
                     )
+                
+                # 4. 保存 Checkpoint（如果需要）
+                if (iteration + 1) % save_interval == 0:
+                    logger.info("Saving checkpoint...")
+                    checkpoint_path = trainer.save_checkpoint(iteration + 1)
+                    logger.log_checkpoint(iteration + 1, checkpoint_path)
+                    # 保存指标
+                    if metrics_logger:
+                        metrics_logger.save()
             
-            # 4. 保存 Checkpoint（如果需要）
-            if (iteration + 1) % save_interval == 0:
-                logger.info("Saving checkpoint...")
-                checkpoint_path = trainer.save_checkpoint(iteration + 1)
-                logger.log_checkpoint(iteration + 1, checkpoint_path)
-                # 保存指标
-                if metrics_logger:
-                    metrics_logger.save()
-        
-        except Exception as e:
-            logger.error(f"Error during training iteration {iteration + 1}: {e}", exc_info=True)
-            # 尝试保存 checkpoint
-            try:
-                trainer.save_checkpoint(iteration + 1)
-                logger.info(f"Checkpoint saved after error at iteration {iteration + 1}")
-            except Exception as checkpoint_error:
-                logger.error(f"Failed to save checkpoint after error: {checkpoint_error}")
-            # 继续下一个迭代或退出
-            continue
+            except Exception as e:
+                logger.error(f"Error during training iteration {iteration + 1}: {e}", exc_info=True)
+                # 尝试保存 checkpoint
+                try:
+                    trainer.save_checkpoint(iteration + 1)
+                    logger.info(f"Checkpoint saved after error at iteration {iteration + 1}")
+                except Exception as checkpoint_error:
+                    logger.error(f"Failed to save checkpoint after error: {checkpoint_error}")
+                # 继续下一个迭代或退出
+                continue
     
     except KeyboardInterrupt:
         logger.info("\nTraining interrupted by user (KeyboardInterrupt)")
