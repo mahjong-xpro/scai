@@ -716,11 +716,27 @@ impl GameEngine {
                         
                         if win_result.is_win {
                             // 计算该胡牌类型的番数
+                            // 注意：在流局结算时，我们无法确定玩家会以什么方式胡牌（自摸/点炮），
+                            // 也无法确定是否会触发动作加成（杠上开花、海底捞月等）。
+                            // 因此，我们只计算基础番数和根数，不考虑动作加成。
+                            // 这是最保守的做法，确保未听牌玩家按听牌者可能达到的最高番数赔付。
                             let base_fans = BaseFansCalculator::base_fans(win_result.win_type);
                             let roots = RootCounter::count_roots(&test_hand, &player.melds);
-                            if let Some(total) = Settlement::new(base_fans, roots, 0).total_fans() {
-                                max_fan_for_player = max_fan_for_player.max(total);
-                            }
+                            
+                            // 对于龙七对，需要特殊处理
+                            let total = if win_result.win_type == crate::tile::win_check::WinType::DragonSevenPairs {
+                                // 龙七对的基础番数已经包含了根数倍率
+                                BaseFansCalculator::dragon_seven_pairs_fans(roots)
+                            } else {
+                                // 其他牌型：基础番 × 2^根数
+                                if let Some(total) = Settlement::new(base_fans, roots, 0).total_fans() {
+                                    total
+                                } else {
+                                    continue; // 溢出，跳过这张牌
+                                }
+                            };
+                            
+                            max_fan_for_player = max_fan_for_player.max(total);
                         }
                     }
                     
