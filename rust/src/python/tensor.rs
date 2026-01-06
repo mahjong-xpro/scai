@@ -329,7 +329,7 @@ pub fn state_to_tensor(
         }
         
         // 平面 51-54: 听牌状态
-        for p_id in 0..4 {
+        for p_id in 0..NUM_PLAYERS as usize {
             if game_state.players[p_id].is_ready {
                 for suit in 0..3 {
                     for rank in 0..9 {
