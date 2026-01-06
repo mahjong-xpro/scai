@@ -356,55 +356,27 @@ pub fn state_to_tensor(
             }
         }
         
-        // 平面 63: Oracle 特征 - 牌堆余牌分布（仅训练时使用，简化版本）
+        // 平面 63: Oracle 特征 - 牌堆余牌分布汇总（仅训练时使用，简化版本）
         // 注意：由于平面空间有限，这里只记录一个汇总值
         // 完整的牌堆余牌分布需要更多平面，可以在需要时扩展
-        // 显示每张牌在牌堆中剩余的数量（0-4）
         if use_oracle {
             if let Some(wall_dist) = wall_tile_distribution {
                 // wall_dist 应该是 108 个浮点数，对应 108 种牌
                 // 每个值表示该牌在牌堆中剩余的数量（0-4）
                 if wall_dist.len() == 108 {
-                    let mut dist_idx = 0;
+                    // 计算平均剩余牌数（归一化到 [0, 1]）
+                    let avg_remaining: f32 = wall_dist.iter().sum::<f32>() / (108.0 * 4.0);
                     for suit in 0..3 {
                         for rank in 0..9 {
-                            let count = wall_dist[dist_idx];
-                            // 归一化到 [0, 1] 范围（除以 4）
-                            let normalized = (count / 4.0).min(1.0);
-                            
-                            // 使用 Plane 47-51 记录牌堆余牌分布
-                            // Plane 47: 0 张剩余
-                            // Plane 48: 1 张剩余
-                            // Plane 49: 2 张剩余
-                            // Plane 50: 3 张剩余
-                            // Plane 51: 4 张剩余
-                            let plane_base = 47;
-                            let count_int = count as u32;
-                            
-                            if count_int == 0 && plane_base < 64 {
-                                data[[plane_base, suit, rank]] = 1.0;
-                            } else if count_int == 1 && plane_base + 1 < 64 {
-                                data[[plane_base + 1, suit, rank]] = 1.0;
-                            } else if count_int == 2 && plane_base + 2 < 64 {
-                                data[[plane_base + 2, suit, rank]] = 1.0;
-                            } else if count_int == 3 && plane_base + 3 < 64 {
-                                data[[plane_base + 3, suit, rank]] = 1.0;
-                            } else if count_int >= 4 && plane_base + 4 < 64 {
-                                data[[plane_base + 4, suit, rank]] = 1.0;
+                            if 63 < 64 {
+                                data[[63, suit, rank]] = avg_remaining;
                             }
-                            
-                            // 同时记录归一化的数量值（用于更精确的信息）
-                            if plane_base + 5 < 64 {
-                                data[[plane_base + 5, suit, rank]] = normalized;
-                            }
-                            
-                            dist_idx += 1;
                         }
                     }
                 }
             }
         }
-        // 如果不在 Oracle 模式，Plane 47-56 保持为 0（不显示牌堆余牌分布）
+        // 如果不在 Oracle 模式，Plane 63 保持为 0（不显示牌堆余牌分布）
         
         // 平面 56-63: 保留用于未来扩展
     }
