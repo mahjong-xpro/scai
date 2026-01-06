@@ -313,13 +313,34 @@ def main():
         logger.info(f"Reward config for stage {curriculum.current_stage.value}: {initial_reward_config}")
     
     # PPO 算法
+    # 确保数值类型正确（YAML 可能将科学计数法解析为字符串）
+    learning_rate = training_config.get('learning_rate', 3e-4)
+    if isinstance(learning_rate, str):
+        learning_rate = float(learning_rate)
+    
+    clip_epsilon = training_config.get('clip_epsilon', 0.2)
+    if isinstance(clip_epsilon, str):
+        clip_epsilon = float(clip_epsilon)
+    
+    value_coef = training_config.get('value_coef', 0.5)
+    if isinstance(value_coef, str):
+        value_coef = float(value_coef)
+    
+    entropy_coef = training_config.get('entropy_coef', 0.01)
+    if isinstance(entropy_coef, str):
+        entropy_coef = float(entropy_coef)
+    
+    max_grad_norm = training_config.get('max_grad_norm', 0.5)
+    if isinstance(max_grad_norm, str):
+        max_grad_norm = float(max_grad_norm)
+    
     ppo = PPO(
         model=model,
-        learning_rate=training_config.get('learning_rate', 3e-4),
-        clip_epsilon=training_config.get('clip_epsilon', 0.2),
-        value_coef=training_config.get('value_coef', 0.5),
-        entropy_coef=training_config.get('entropy_coef', 0.01),
-        max_grad_norm=training_config.get('max_grad_norm', 0.5),
+        learning_rate=learning_rate,
+        clip_epsilon=clip_epsilon,
+        value_coef=value_coef,
+        entropy_coef=entropy_coef,
+        max_grad_norm=max_grad_norm,
         device=device,
     )
     
