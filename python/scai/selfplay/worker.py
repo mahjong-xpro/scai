@@ -42,6 +42,9 @@ class SelfPlayWorker:
         ismcts: Optional[Any] = None,
         use_search_enhanced: bool = False,
         critical_decision_threshold: float = 0.8,
+        use_feeding: bool = False,
+        feeding_config: Optional[Any] = None,
+        enable_win: bool = True,
     ):
         """
         参数：
@@ -52,6 +55,9 @@ class SelfPlayWorker:
         - ismcts: ISMCTS 搜索器（可选）
         - use_search_enhanced: 是否使用搜索增强推理（默认 False）
         - critical_decision_threshold: 关键决策阈值（默认 0.8）
+        - use_feeding: 是否使用喂牌模式（默认 False）
+        - feeding_config: 喂牌配置（可选）
+        - enable_win: 是否允许胡牌（默认 True，所有阶段都允许，通过奖励函数引导是否追求）
         """
         self.worker_id = worker_id
         self.num_games = num_games
@@ -62,6 +68,7 @@ class SelfPlayWorker:
         self.critical_decision_threshold = critical_decision_threshold
         self.use_feeding = use_feeding
         self.feeding_config = feeding_config
+        self.enable_win = enable_win  # 是否开启胡牌功能
         
         # 初始化 Rust 引擎
         self.engine = scai_engine.PyGameEngine()
@@ -226,6 +233,10 @@ class SelfPlayWorker:
                 is_own_turn,
                 None,  # 没有别人打出的牌
             )
+            
+            # 注意：不再强制禁用胡牌动作
+            # 初期阶段通过奖励函数引导AI不追求胡牌（不给胡牌奖励）
+            # 让AI自然学习到"这个阶段很难胡牌，所以不追求胡牌"
             
             # 转换为 PyTorch 张量
             state_tensor_torch = torch.from_numpy(state_tensor).float().unsqueeze(0).to(self.device)
@@ -549,6 +560,7 @@ def create_workers(
     critical_decision_threshold: float = 0.8,
     use_feeding: bool = False,
     feeding_config: Optional[Any] = None,
+    enable_win: bool = True,
 ) -> List:
     """
     创建多个 Worker
@@ -562,6 +574,7 @@ def create_workers(
     - critical_decision_threshold: 关键决策阈值（默认 0.8）
     - use_feeding: 是否使用喂牌模式（默认 False）
     - feeding_config: 喂牌配置（可选）
+    - enable_win: 是否开启胡牌功能（默认 True）
     
     返回：
     - Worker 列表
@@ -577,6 +590,7 @@ def create_workers(
             critical_decision_threshold=critical_decision_threshold,
             use_feeding=use_feeding,
             feeding_config=feeding_config,
+            enable_win=enable_win,
         )
         workers.append(worker)
     

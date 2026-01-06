@@ -180,13 +180,21 @@ def main():
     # 经验回放缓冲区
     buffer = ReplayBuffer(capacity=training_config.get('buffer_capacity', 100000))
     
-    # 奖励函数
+    # 奖励函数（初始配置，会根据课程学习阶段动态调整）
+    initial_reward_config = {}
+    if curriculum:
+        initial_reward_config = curriculum.get_current_reward_config()
+    
     reward_shaping = RewardShaping(
         ready_reward=training_config.get('ready_reward', 0.1),
         hu_reward=training_config.get('hu_reward', 1.0),
         flower_pig_penalty=training_config.get('flower_pig_penalty', -5.0),
         final_score_weight=training_config.get('final_score_weight', 1.0),
+        reward_config=initial_reward_config,  # 使用课程学习阶段的奖励配置
     )
+    
+    if curriculum:
+        logger.info(f"Reward config for stage {curriculum.current_stage.value}: {initial_reward_config}")
     
     # PPO 算法
     ppo = PPO(
@@ -378,13 +386,64 @@ def main():
                     current_metrics,
                     current_iteration=iteration + 1,
                 ):
+                    old_stage = curriculum.current_stage
                     curriculum.advance_to_next_stage()
-                    logger.info(f"Advanced to stage: {curriculum.current_stage.value}")
+                    logger.info(f"Advanced from {old_stage.value} to {curriculum.current_stage.value}")
+                    
+                    # 更新奖励配置
+                    new_reward_config = curriculum.get_current_reward_config()
+                    if new_reward_config:
+                        reward_shaping.reward_config = new_reward_config
+                        logger.info(f"Updated reward config: {new_reward_config}")
+                    
+                    # 更新熵系数
+                    new_entropy_coef = curriculum.get_current_entropy_coef()
+                    ppo.entropy_coef = new_entropy_coef
+                    logger.info(f"Updated entropy coef: {new_entropy_coef}")
+                    
+                    # 更新搜索增强推理
+                    new_use_search = curriculum.should_use_search_enhanced()
+                    if new_use_search and not use_search_enhanced and HAS_ISMCTS:
+                        ismcts = ISMCTS(
+                            num_simulations=search_config.get('num_simulations', 100),
+                            exploration_constant=search_config.get('exploration_constant', 1.41),
+                            determinization_samples=search_config.get('determinization_samples', 10),
+                        )
+                        use_search_enhanced = True
+                        logger.info("Enabled search-enhanced inference")
+                    
+                    # 更新对抗训练
+                    new_use_adversarial = curriculum.should_use_adversarial()
+                    if new_use_adversarial:
+                        logger.info("Adversarial training should be enabled for this stage")
         
         # 1. 收集数据（如果需要）
         if (iteration + 1) % collect_interval == 0:
             logger.info("Collecting trajectories...")
             model_state_dict = model.state_dict()
+            
+            # 根据课程学习阶段更新 collector 配置（如果启用）
+            if collector and curriculum is not None:
+                current_curriculum = curriculum.get_current_curriculum()
+                # 更新 enable_win
+                collector.enable_win = current_curriculum.enable_win
+                # 更新喂牌配置
+                if current_curriculum.use_feeding_games:
+                    collector.enable_feeding_games(
+                        enabled=True,
+                        difficulty='easy',
+                        feeding_rate=current_curriculum.feeding_rate,
+                    )
+                else:
+                    collector.enable_feeding_games(enabled=False)
+                # 重新初始化 workers 以应用新配置
+                collector.initialize_workers(
+                    use_feeding=current_curriculum.use_feeding_games,
+                    enable_win=current_curriculum.enable_win,
+                )
+                logger.info(f"Updated collector config: enable_win={current_curriculum.enable_win}, "
+                          f"use_feeding={current_curriculum.use_feeding_games}, "
+                          f"feeding_rate={current_curriculum.feeding_rate if current_curriculum.use_feeding_games else 0.0}")
             
             # 如果启用了对手池，选择对手
             if collector and collector.use_opponent_pool:

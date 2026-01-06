@@ -5,7 +5,7 @@
 """
 
 from typing import Dict, List, Optional, Any
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 
 
@@ -34,6 +34,12 @@ class CurriculumStep:
     min_iterations: int = 0  # 最小迭代次数（达到此值后才考虑推进）
     max_iterations: int = 0  # 最大迭代次数（达到此值后强制推进，0表示不限制）
     use_feeding_games: bool = False  # 是否使用喂牌模式（生成更容易学习的牌局）
+    feeding_rate: float = 0.0  # 喂牌比例（0.0-1.0）
+    enable_win: bool = True  # 是否允许胡牌（所有阶段都允许，通过奖励函数引导是否追求）
+    reward_config: Optional[Dict[str, float]] = field(default_factory=dict)  # 奖励权重配置
+    entropy_coef: float = 0.01  # Entropy系数（用于探索）
+    use_search_enhanced: bool = False  # 是否使用搜索增强推理
+    use_adversarial: bool = False  # 是否使用对抗训练
 
 
 class CurriculumLearning:
@@ -55,12 +61,13 @@ class CurriculumLearning:
         if self.current_stage == TrainingStage.DECLARE_SUIT:
             return CurriculumStep(
                 stage=TrainingStage.DECLARE_SUIT,
-                name="定缺阶段：学习定缺规则",
-                description="学习定缺规则，理解缺一门的概念",
+                name="阶段1：定缺与生存（弃牌逻辑初探）",
+                description="解决Action Mask报错，让AI意识到手牌花色的物理分类",
                 objectives=[
                     "理解定缺规则",
                     "学会选择定缺花色",
                     "避免成为花猪",
+                    "掌握弃牌逻辑（优先打缺门牌）",
                 ],
                 evaluation_criteria={
                     'flower_pig_rate': 0.50,  # 花猪率低于50%（初期非常宽松）
@@ -70,16 +77,28 @@ class CurriculumLearning:
                 estimated_iterations=5000,
                 min_iterations=2000,  # 至少训练2000次迭代
                 max_iterations=8000,  # 最多8000次迭代后强制推进
+                use_feeding_games=False,  # 100%随机发牌
+                feeding_rate=0.0,  # 不喂牌
+                enable_win=True,  # 允许胡牌，但不追求（通过奖励引导）
+                reward_config={
+                    'lack_color_discard': 5.0,  # 打出一张缺门牌
+                    'illegal_action_attempt': -10.0,  # 试图在有缺门时打出其他牌
+                    'shanten_reward': 0.0,  # 暂不开启向听数奖励
+                    'base_win': 0.0,  # 不给胡牌奖励（让AI自然学习到不追求胡牌）
+                    'ready_reward': 0.0,  # 不给听牌奖励
+                },
+                entropy_coef=0.05,  # 高熵，鼓励探索
             )
         elif self.current_stage == TrainingStage.LEARN_WIN:
             return CurriculumStep(
                 stage=TrainingStage.LEARN_WIN,
-                name="学胡阶段：学习基本胡牌（喂牌模式）",
-                description="使用喂牌机制，学习基本胡牌类型",
+                name="阶段2：学胡基础（向听数驱动）",
+                description="解决0数据无法胡牌的困境，利用向听数作为引导信号",
                 objectives=[
                     "识别基本胡牌类型（平胡、七对等）",
                     "理解听牌概念",
                     "学会主动胡牌",
+                    "利用向听数改善手牌质量",
                 ],
                 evaluation_criteria={
                     'win_rate': 0.20,  # 胜率至少20%（喂牌模式下更容易达到）
@@ -91,74 +110,123 @@ class CurriculumLearning:
                 min_iterations=4000,  # 至少训练4000次迭代
                 max_iterations=12000,  # 最多12000次迭代后强制推进
                 use_feeding_games=True,  # 启用喂牌模式
+                feeding_rate=0.2,  # 20%比例喂牌（2:8比例）
+                enable_win=True,  # 开启胡牌功能
+                reward_config={
+                    'shanten_decrease': 2.0,  # 向听数减少（进张）
+                    'shanten_increase': -1.5,  # 拆搭子导致向听数增加
+                    'ready_hand': 10.0,  # 听牌一次性重奖
+                    'lack_color_discard': 2.0,  # 保留定缺奖励（降低权重）
+                },
+                entropy_coef=0.03,  # 中等熵，平衡探索和利用
             )
         elif self.current_stage == TrainingStage.BASIC:
             return CurriculumStep(
                 stage=TrainingStage.BASIC,
-                name="基础阶段：定缺和基本胡牌",
-                description="学习基本的定缺策略和常见胡牌类型",
+                name="阶段3：价值收割（番型感知）",
+                description="AI开始胡牌，并学会识别高收益牌型",
                 objectives=[
-                    "正确选择定缺花色",
-                    "识别基本胡牌类型（平胡、七对等）",
-                    "理解缺一门规则",
+                    "学会识别高收益牌型",
+                    "理解番数计算",
+                    "学会识别根（Gen）",
+                    "理解查大叫和查花猪的罚分",
                 ],
                 evaluation_criteria={
-                    # 0基础数据下，初期主要依赖迭代次数推进，不强制要求胜率
-                    # 'win_rate': 0.05,  # 移除胜率要求（随机打牌很难达到）
-                    'flower_pig_rate': 0.30,  # 花猪率低于30%（初期允许很高，只要有改善即可）
-                    'ready_rate': 0.05,  # 听牌率至少5%（更容易达到，只要有进步即可）
-                    # 或者使用其他更容易达到的指标
-                    'games_played': 1000,  # 至少完成1000局游戏（确保有足够训练）
+                    'win_rate': 0.15,  # 胜率至少15%
+                    'average_fan': 2.0,  # 平均番数至少2番
+                    'gen_count': 0.3,  # 平均每局至少0.3个根
+                    'games_played': 1500,  # 至少完成1500局游戏
                 },
-                estimated_iterations=10000,
-                min_iterations=3000,  # 至少训练3000次迭代（降低门槛）
-                max_iterations=12000,  # 最多12000次迭代后强制推进（更激进）
+                estimated_iterations=15000,
+                min_iterations=8000,  # 至少训练8000次迭代
+                max_iterations=20000,  # 最多20000次迭代后强制推进
+                use_feeding_games=True,  # 保留少量喂牌
+                feeding_rate=0.1,  # 降低到10%（快速降低喂牌比例）
+                enable_win=True,  # 开启胡牌功能
+                reward_config={
+                    'base_win': 20.0,  # 基础胡牌奖励
+                    'fan_multiplier': 1.5,  # 番数倍数（根据最终结算金额）
+                    'gen_reward': 5.0,  # 每多一个根，额外给奖
+                    'shouting_penalty': -30.0,  # 查大叫罚分（1.5倍胡牌奖励）
+                    'flower_pig_penalty': -30.0,  # 查花猪罚分（1.5倍胡牌奖励）
+                    'shanten_reward': 0.5,  # 向听数奖励衰减
+                },
+                entropy_coef=0.02,  # 降低熵，开始收敛
             )
         elif self.current_stage == TrainingStage.DEFENSIVE:
             return CurriculumStep(
                 stage=TrainingStage.DEFENSIVE,
-                name="防御阶段：避炮策略",
-                description="学习如何避免点炮，提高防御能力",
+                name="阶段4：防御初阶（避炮与危险感知）",
+                description="顶级水平的分水岭——学会不再送死",
                 objectives=[
                     "识别危险牌",
                     "避免在关键时刻点炮",
-                    "学会过胡策略",
+                    "学会安全弃牌（打熟张）",
+                    "理解残局压力",
                 ],
                 evaluation_criteria={
-                    'discard_win_rate': 0.20,  # 点炮率低于20%（初期允许较高）
-                    # 'defensive_score': 0.5,  # 防御得分（如果难以计算，可以移除）
-                    'win_rate': 0.10,  # 胜率至少10%（降低要求）
-                    'ready_rate': 0.15,  # 听牌率至少15%
+                    'discard_win_rate': 0.15,  # 点炮率低于15%
+                    'win_rate': 0.20,  # 胜率至少20%
+                    'ready_rate': 0.25,  # 听牌率至少25%
+                    'safe_discard_rate': 0.60,  # 安全弃牌率至少60%
                 },
-                estimated_iterations=20000,
-                min_iterations=8000,  # 至少训练8000次迭代
-                max_iterations=25000,  # 最多25000次迭代后强制推进
+                estimated_iterations=25000,
+                min_iterations=12000,  # 至少训练12000次迭代
+                max_iterations=35000,  # 最多35000次迭代后强制推进
+                use_feeding_games=False,  # 不使用喂牌
+                feeding_rate=0.0,  # 完全随机牌局
+                enable_win=True,  # 开启胡牌功能
+                reward_config={
+                    'point_loss': -30.0,  # 点炮重罚
+                    'safe_discard_bonus': 0.5,  # 在对手听牌时，打出场上已现的熟张
+                    'shanten_reward': 0.5,  # 向听数奖励衰减（防止AI为了快胡而无视风险）
+                    'base_win': 15.0,  # 降低基础胡牌奖励
+                    'fan_multiplier': 1.2,  # 降低番数倍数
+                },
+                entropy_coef=0.01,  # 低熵，专注策略优化
+                use_adversarial=False,  # 使用对手池中的阶段3镜像
             )
         elif self.current_stage == TrainingStage.ADVANCED:
             return CurriculumStep(
                 stage=TrainingStage.ADVANCED,
-                name="高级阶段：博弈策略",
-                description="学习高级博弈策略，包括杠牌、听牌选择等",
+                name="阶段5：高级博弈（过胡与杠的博弈）",
+                description="学会钓鱼和风险对冲",
                 objectives=[
-                    "学会杠牌时机选择",
-                    "优化听牌选择",
-                    "理解期望收益计算",
+                    "学会过胡策略（钓鱼）",
+                    "理解杠牌的风险和收益",
+                    "学会呼叫转移的规避",
+                    "优化期望收益计算",
                 ],
                 evaluation_criteria={
-                    'elo_score': 1100,  # Elo分数至少1100（进一步降低）
-                    'average_score': 3.0,  # 平均得分至少3分（进一步降低）
-                    'win_rate': 0.20,  # 胜率至少20%（降低要求）
+                    'elo_score': 1400,  # Elo分数至少1400
+                    'average_score': 5.0,  # 平均得分至少5分
+                    'win_rate': 0.30,  # 胜率至少30%
+                    'pass_hu_success_rate': 0.20,  # 过胡成功率至少20%
                 },
-                estimated_iterations=30000,
-                min_iterations=15000,  # 至少训练15000次迭代
-                max_iterations=40000,  # 最多40000次迭代后强制推进
+                estimated_iterations=40000,
+                min_iterations=25000,  # 至少训练25000次迭代
+                max_iterations=60000,  # 最多60000次迭代后强制推进
+                use_feeding_games=False,  # 不使用喂牌
+                feeding_rate=0.0,  # 完全随机牌局
+                enable_win=True,  # 开启胡牌功能
+                reward_config={
+                    'pass_hu_success': 15.0,  # 过胡后胡了更大的番数
+                    'call_transfer_loss': -40.0,  # 杠上炮导致的呼叫转移，极重罚
+                    'base_win': 10.0,  # 进一步降低基础奖励
+                    'fan_multiplier': 1.0,  # 番数倍数回归正常
+                    'shanten_reward': 0.0,  # 完全关闭向听数奖励
+                },
+                entropy_coef=0.005,  # 极低熵，精细策略
+                use_search_enhanced=True,  # 开启ISMCTS搜索增强
+                use_adversarial=False,  # 使用对手池
             )
         else:  # EXPERT
             return CurriculumStep(
                 stage=TrainingStage.EXPERT,
-                name="专家阶段：复杂策略组合",
-                description="学习复杂策略组合，达到专家水平",
+                name="阶段6：专家进化（期望收益最大化）",
+                description="抹除所有人工痕迹，回归血战到底的本源——金币收益",
                 objectives=[
+                    "纯金币收益驱动",
                     "掌握所有高级策略",
                     "优化策略组合",
                     "达到专家水平",
@@ -166,10 +234,29 @@ class CurriculumLearning:
                 evaluation_criteria={
                     'elo_score': 1800,  # Elo分数至少1800
                     'win_rate': 0.45,  # 胜率至少45%
+                    'average_score': 8.0,  # 平均得分至少8分
                 },
-                estimated_iterations=50000,
-                min_iterations=40000,  # 至少训练40000次迭代
+                estimated_iterations=100000,
+                min_iterations=60000,  # 至少训练60000次迭代
                 max_iterations=0,  # 专家阶段不设上限
+                use_feeding_games=False,  # 不使用喂牌
+                feeding_rate=0.0,  # 完全随机牌局
+                enable_win=True,  # 开启胡牌功能
+                reward_config={
+                    # 纯金币收益，取消所有人工Reward
+                    'raw_score_only': True,  # 仅使用原始得分
+                    'base_win': 0.0,  # 取消基础胡牌奖励
+                    'fan_multiplier': 0.0,  # 取消番数倍数
+                    'gen_reward': 0.0,  # 取消根奖励
+                    'shanten_reward': 0.0,  # 取消向听数奖励
+                    'ready_reward': 0.0,  # 取消听牌奖励
+                    # 只保留惩罚（避免极端行为）
+                    'point_loss': -1.0,  # 点炮惩罚（仅作为约束）
+                    'call_transfer_loss': -1.0,  # 呼叫转移惩罚（仅作为约束）
+                },
+                entropy_coef=0.001,  # 极低熵，完全收敛
+                use_search_enhanced=True,  # 开启ISMCTS搜索增强
+                use_adversarial=True,  # 开启对抗训练（面对极端风格对手）
             )
     
     def should_advance_stage(
@@ -354,4 +441,34 @@ class CurriculumLearning:
             TrainingStage.EXPERT: 50000,
         }
         return estimates.get(stage, 20000)
+    
+    def get_current_reward_config(self) -> Dict[str, float]:
+        """获取当前阶段的奖励配置"""
+        current_curriculum = self.get_current_curriculum()
+        return current_curriculum.reward_config
+    
+    def get_current_entropy_coef(self) -> float:
+        """获取当前阶段的熵系数"""
+        current_curriculum = self.get_current_curriculum()
+        return current_curriculum.entropy_coef
+    
+    def should_use_search_enhanced(self) -> bool:
+        """判断当前阶段是否应该使用搜索增强推理"""
+        current_curriculum = self.get_current_curriculum()
+        return current_curriculum.use_search_enhanced
+    
+    def should_use_adversarial(self) -> bool:
+        """判断当前阶段是否应该使用对抗训练"""
+        current_curriculum = self.get_current_curriculum()
+        return current_curriculum.use_adversarial
+    
+    def get_current_enable_win(self) -> bool:
+        """获取当前阶段是否开启胡牌功能"""
+        current_curriculum = self.get_current_curriculum()
+        return current_curriculum.enable_win
+    
+    def get_current_feeding_rate(self) -> float:
+        """获取当前阶段的喂牌比例"""
+        current_curriculum = self.get_current_curriculum()
+        return current_curriculum.feeding_rate if current_curriculum.use_feeding_games else 0.0
 

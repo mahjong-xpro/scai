@@ -67,14 +67,19 @@ class DataCollector:
         self.feeding_config = None
         self.use_feeding = False
         
+        # 课程学习配置（用于传递阶段信息给Worker）
+        self.curriculum = None
+        self.enable_win = True  # 是否允许胡牌（所有阶段都允许，通过奖励函数引导是否追求）
+        
         # Worker 列表
         self.workers = None
     
-    def initialize_workers(self, use_feeding: bool = False):
+    def initialize_workers(self, use_feeding: bool = False, enable_win: bool = True):
         """初始化 Worker
         
         参数：
         - use_feeding: 是否使用喂牌模式
+        - enable_win: 是否开启胡牌功能
         """
         if self.workers is None:
             self.workers = create_workers(
@@ -83,6 +88,7 @@ class DataCollector:
                 use_oracle=self.use_oracle,
                 use_feeding=use_feeding,
                 feeding_config=self.feeding_config if self.use_feeding else None,
+                enable_win=enable_win,
             )
     
     def enable_opponent_pool(
