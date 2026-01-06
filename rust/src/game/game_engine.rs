@@ -214,9 +214,15 @@ impl GameEngine {
         }
         
         // 执行碰牌
-        if !PongHandler::pong(&mut self.state.players[player_id as usize], tile) {
+        let player = &mut self.state.players[player_id as usize];
+        if !PongHandler::pong(player, tile) {
             return Err(GameError::InvalidAction);
         }
+        
+        // 清除过胡锁定（规则：过胡锁定只在"下一次摸牌前"有效）
+        // 碰牌后玩家会继续出牌，但不会摸牌，所以需要在碰牌时清除过胡锁定
+        // 这样玩家在碰牌后可以正常胡牌
+        player.clear_passed_win();
         
         self.state.last_action = Some(Action::Pong { tile });
         self.state.current_player = player_id;
