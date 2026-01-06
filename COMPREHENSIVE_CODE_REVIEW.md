@@ -18,11 +18,32 @@
 - 完整的轨迹记录（states, actions, rewards, values, log_probs, dones, action_masks）
 - 错误处理和边界情况处理
 
-**仍需完善**：
-- ⚠️ 定缺阶段的实现需要添加 `PyGameEngine.declare_suit()` 方法
-- ⚠️ 摸牌操作需要添加 `PyGameEngine.draw()` 方法或使用 `process_action("draw", ...)`
-- ⚠️ 奖励计算需要从游戏状态中获取实际信息（听牌、胡牌等）
-- ⚠️ 最终得分提取需要从结算结果中获取
+**状态**：✅ **已全部修复**
+
+**修复内容**：
+1. ✅ **定缺阶段实现**：
+   - 添加 `PyGameEngine.declare_suit()` 方法（Rust 端）
+   - 在 Python 端使用 `declare_suit()` 执行定缺
+
+2. ✅ **摸牌操作**：
+   - 使用 `process_action("draw", ...)` 方法
+   - 添加错误处理
+
+3. ✅ **奖励计算**：
+   - 从游戏状态中获取实际信息（听牌、胡牌、花猪）
+   - 在动作执行后更新状态并计算奖励
+   - 实现 `_check_flower_pig()` 方法检查花猪
+
+4. ✅ **最终得分提取**：
+   - 实现 `_extract_final_score_from_settlement()` 方法
+   - 从结算结果字符串中解析得分
+   - 判断是否获胜（得分 > 0）
+
+**实现细节**：
+- 奖励在动作执行后立即计算，使用最新状态
+- 胡牌时添加胡牌奖励
+- 最终奖励添加到最后一个时间步
+- 确保奖励数量与状态数量一致
 
 ### 1.2 ISMCTS (`python/scai/search/ismcts.py`)
 
