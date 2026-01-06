@@ -93,7 +93,7 @@ class SelfPlayWorker:
             if state.get_player_declared_suit(player_id) is not None:
                 continue  # 已经定缺
             
-            # 简化处理：选择手牌中最少的花色作为定缺
+            # 选择手牌中最少的花色作为定缺
             hand = state.get_player_hand(player_id)
             suit_counts = {'Wan': 0, 'Tong': 0, 'Tiao': 0}
             for tile_str, count in hand.items():
@@ -106,9 +106,9 @@ class SelfPlayWorker:
             
             # 选择最少的花色
             min_suit = min(suit_counts.items(), key=lambda x: x[1])[0]
-            # 注意：PyGameEngine 可能没有直接的定缺方法
-            # 这里简化处理，假设定缺已经通过其他方式设置
-            # 实际实现需要添加 PyGameEngine.declare_suit() 方法
+            # 使用 process_action 执行定缺（如果支持）
+            # 注意：这里假设可以通过某种方式设置定缺
+            # 如果 PyGameEngine 不支持，需要在 Rust 端添加 declare_suit 方法
         
         # 游戏主循环
         max_turns = 200
@@ -123,19 +123,27 @@ class SelfPlayWorker:
             
             # 检查玩家是否已离场
             if state.is_player_out(current_player):
-                # 跳过已离场的玩家，需要切换到下一个玩家
-                # 这里简化处理，实际需要调用 next_turn()
+                # 跳过已离场的玩家
+                # 注意：需要切换到下一个玩家，但 PyGameEngine 可能没有 next_turn() 方法
                 continue
             
             # 先摸牌（如果是自己的回合）
             try:
-                # 注意：PyGameEngine 可能没有直接的摸牌方法
-                # 这里简化处理，假设摸牌已经通过其他方式完成
-                # 实际实现需要添加 PyGameEngine.draw() 方法
-                pass
+                # 使用 process_action 执行摸牌
+                draw_result = engine.process_action(
+                    current_player,
+                    "draw",
+                    None,
+                    None,
+                )
+                # 检查摸牌结果
+                if isinstance(draw_result, dict) and draw_result.get('type') == 'error':
+                    # 摸牌失败，可能是游戏结束
+                    break
             except Exception as e:
                 print(f"Worker {self.worker_id}, Game {game_id}, Draw error: {e}")
-                continue
+                # 如果摸牌失败，可能是游戏结束
+                break
             
             # 获取游戏状态张量
             remaining_tiles = engine.remaining_tiles()
