@@ -147,8 +147,14 @@ impl GameEngine {
 
     /// 处理摸牌
     fn handle_draw(&mut self, player_id: u8) -> Result<ActionResult, GameError> {
-        // 检查是否是最后一张牌
-        if self.wall.remaining_count() <= 1 {
+        // 提前检查牌墙是否为空
+        let remaining_before = self.wall.remaining_count();
+        if remaining_before == 0 {
+            return Err(GameError::GameOver);
+        }
+        
+        // 检查是否是最后一张牌（在抽取前检查）
+        if remaining_before <= 1 {
             self.state.is_last_tile = true;
         }
         
@@ -159,13 +165,16 @@ impl GameEngine {
             
             self.state.last_action = Some(Action::Draw);
             
-            // 检查是否是最后一张牌
-            if self.wall.remaining_count() == 0 {
+            // 检查是否是最后一张牌（抽取后检查）
+            let remaining_after = self.wall.remaining_count();
+            if remaining_after == 0 {
                 self.state.is_last_tile = true;
             }
             
             Ok(ActionResult::Drawn { tile })
         } else {
+            // 如果 draw() 返回 None，说明牌墙已空
+            self.state.is_last_tile = true;
             Err(GameError::GameOver)
         }
     }
@@ -347,8 +356,22 @@ impl GameEngine {
         
         // 3. 游戏主循环
         let mut max_turns = 200; // 最大回合数限制，防止无限循环
+        let initial_turn = self.state.turn;
+        
         while !self.state.is_game_over() && max_turns > 0 {
             max_turns -= 1;
+            
+            // 提前检查牌墙是否即将耗尽
+            let remaining_tiles = self.wall.remaining_count();
+            if remaining_tiles == 0 {
+                // 牌墙已空，游戏应该结束
+                break;
+            }
+            
+            // 如果剩余牌数很少，提前设置 is_last_tile 标志
+            if remaining_tiles <= 1 && !self.state.is_last_tile {
+                self.state.is_last_tile = true;
+            }
             
             let current_player = self.state.current_player;
             
