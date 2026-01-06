@@ -414,26 +414,26 @@ def main():
             
             # 更新仪表板状态（如果启用）
             if HAS_COACH and curriculum is not None:
-            current_metrics = {
-                'iteration': iteration + 1,
-                'buffer_size': buffer.size(),
-            }
-            if metrics_logger:
-                recent_metrics = metrics_logger.get_recent_metrics()
-                current_metrics.update(recent_metrics)
-            
-            training_stats = {
-                'buffer_size': buffer.size(),
-                'buffer_ready': buffer.is_ready(min_size=training_config.get('batch_size', 4096)),
-            }
-            
-            update_training_status(
-                curriculum=curriculum,
-                current_iteration=iteration + 1,
-                total_iterations=num_iterations,
-                metrics=current_metrics,
-                training_stats=training_stats,
-            )
+                current_metrics = {
+                    'iteration': iteration + 1,
+                    'buffer_size': buffer.size(),
+                }
+                if metrics_logger:
+                    recent_metrics = metrics_logger.get_recent_metrics()
+                    current_metrics.update(recent_metrics)
+                
+                training_stats = {
+                    'buffer_size': buffer.size(),
+                    'buffer_ready': buffer.is_ready(min_size=training_config.get('batch_size', 4096)),
+                }
+                
+                update_training_status(
+                    curriculum=curriculum,
+                    current_iteration=iteration + 1,
+                    total_iterations=num_iterations,
+                    metrics=current_metrics,
+                    training_stats=training_stats,
+                )
         
         # 0. 课程学习阶段调整（如果启用）
         if curriculum is not None:
