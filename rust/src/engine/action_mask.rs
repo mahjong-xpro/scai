@@ -92,7 +92,7 @@ impl ActionMask {
         if player_id < state.players.len() {
             let player = &state.players[player_id];
             if !rules::check_passed_win_restriction(
-                tile,
+                *tile,
                 fans,
                 player.passed_hu_fan,
                 player.passed_hu_tile,
