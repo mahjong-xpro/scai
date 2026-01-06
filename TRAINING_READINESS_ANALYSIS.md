@@ -212,20 +212,20 @@
 
 ### 3.1 高优先级问题 ⚠️
 
-#### 1. Python 模块未安装 ⚠️
-- ⚠️ **问题**: `scai_engine` 和 `scai` 模块需要编译
-- ⚠️ **影响**: 无法运行任何训练代码
-- 💡 **解决方案**: 
-  ```bash
-  cd rust
-  maturin develop  # 开发模式（推荐，自动安装到当前环境）
-  # 或
-  maturin build    # 构建 wheel 包，然后 pip install
+#### 1. Python 模块安装 ✅
+- ✅ **状态**: 已修复编译错误并安装模块
+- ✅ **步骤完成**:
+  1. ✅ 修复类型错误（使用 `NUM_PLAYERS` 常量替代硬编码的 `4`）
+  2. ✅ 安装 maturin: `pip install maturin`
+  3. ✅ 编译并安装: `cd rust && maturin develop`
+  4. ✅ 验证导入: `import scai_engine` 和 `import scai` 成功
+- 📝 **验证命令**:
+  ```python
+  import scai_engine
+  import scai
+  from scai.models import DualResNet
+  from scai.selfplay.worker import SelfPlayWorker
   ```
-- 📝 **状态**: 
-  - ✅ Rust 代码编译通过（`cargo check --features python`）
-  - ⚠️ 需要执行 `maturin develop` 安装 Python 扩展模块
-  - ⚠️ 安装后需要验证模块导入
 
 #### 2. 训练脚本缺失
 - ❌ **问题**: 未找到主训练脚本 (`train.py` 或类似)

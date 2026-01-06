@@ -136,7 +136,8 @@ impl GameState {
         use std::collections::HashMap;
         
         // 1. 验证当前玩家 ID
-        if self.current_player >= 4 {
+        use crate::game::constants::NUM_PLAYERS;
+        if self.current_player >= NUM_PLAYERS {
             return Err(GameError::InvalidPlayer);
         }
         
@@ -230,14 +231,14 @@ impl GameState {
         
         // 7. 验证杠牌历史的一致性
         for gang_record in &self.gang_history {
-            if gang_record.player_id >= 4 {
+            if gang_record.player_id >= NUM_PLAYERS {
                 return Err(GameError::InvalidState);
             }
         }
         
         // 8. 验证弃牌历史的一致性
         for discard_record in &self.discard_history {
-            if discard_record.player_id >= 4 {
+            if discard_record.player_id >= NUM_PLAYERS {
                 return Err(GameError::InvalidState);
             }
         }
