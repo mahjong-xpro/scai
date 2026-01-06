@@ -199,11 +199,7 @@ class SelfPlayWorker:
             log_prob = np.log(masked_policy[action_index] + 1e-8)
             value_np = value.cpu().numpy()[0, 0]
             
-            # 获取游戏状态信息（用于奖励计算）
-            is_ready = state.is_player_ready(current_player)
-            is_hu = False  # 将在动作执行后更新
-            
-            # 记录轨迹
+            # 记录轨迹（在动作执行前）
             trajectory['states'].append(state_tensor)
             trajectory['actions'].append(int(action_index))
             trajectory['values'].append(float(value_np))
@@ -217,6 +213,7 @@ class SelfPlayWorker:
             )
             
             # 执行动作
+            is_hu = False
             try:
                 result = engine.process_action(
                     current_player,
@@ -224,6 +221,11 @@ class SelfPlayWorker:
                     tile_index,
                     is_concealed,
                 )
+                
+                # 更新状态以获取最新信息（用于奖励计算）
+                state = engine.state
+                is_ready_after = state.is_player_ready(current_player)
+                is_flower_pig = self._check_flower_pig(state, current_player)
                 
                 # 检查是否胡牌
                 if isinstance(result, dict) and result.get('type') == 'won':
@@ -237,26 +239,29 @@ class SelfPlayWorker:
                         settlement_str, current_player
                     )
                     trajectory['final_score'] = final_score
+                    
+                    # 计算奖励（胡牌奖励）
+                    reward = self.reward_shaping.compute_step_reward(
+                        is_ready=is_ready_after,
+                        is_hu=is_hu,
+                        is_flower_pig=is_flower_pig,
+                    )
+                    trajectory['rewards'].append(reward)
                     break
+                else:
+                    # 计算奖励（非胡牌情况）
+                    reward = self.reward_shaping.compute_step_reward(
+                        is_ready=is_ready_after,
+                        is_hu=is_hu,
+                        is_flower_pig=is_flower_pig,
+                    )
+                    trajectory['rewards'].append(reward)
                 
             except Exception as e:
                 print(f"Worker {self.worker_id}, Game {game_id}, Turn {turn_count} error: {e}")
-                # 如果动作失败，跳过这个回合
+                # 如果动作失败，添加默认奖励并跳过这个回合
+                trajectory['rewards'].append(0.0)
                 continue
-            
-            # 计算奖励（在动作执行后，可以获取最新状态）
-            # 更新状态以获取最新信息
-            state = engine.state
-            is_ready_after = state.is_player_ready(current_player)
-            is_flower_pig = self._check_flower_pig(state, current_player)
-            
-            # 计算奖励
-            reward = self.reward_shaping.compute_step_reward(
-                is_ready=is_ready_after,
-                is_hu=is_hu,
-                is_flower_pig=is_flower_pig,
-            )
-            trajectory['rewards'].append(reward)
         
         # 如果游戏正常结束，设置最后一个时间步的 done 标志
         if len(trajectory['dones']) > 0 and not trajectory['dones'][-1]:
