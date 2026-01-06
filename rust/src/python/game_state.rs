@@ -114,9 +114,8 @@ impl PyGameState {
         Ok(true)
     }
     
-    /// 解析牌字符串（内部辅助方法）
+    /// 解析牌字符串（内部辅助方法，不暴露给 Python）
     fn _parse_tile_string(&self, tile_str: &str) -> PyResult<Tile> {
-        use crate::tile::Tile;
         
         // 解析格式：如 "Wan(1)", "Tong(5)", "Tiao(9)"
         // 或者 "1Wan", "5Tong", "9Tiao" 等格式

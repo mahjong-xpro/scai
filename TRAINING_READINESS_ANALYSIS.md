@@ -217,11 +217,12 @@
 - ✅ **修复内容**:
   1. ✅ 修复 `state.rs` 中的类型错误：使用 `NUM_PLAYERS` 常量替代硬编码的 `4`
   2. ✅ 修复 `game_state.rs` 中的导入错误：在文件顶部添加 `Tile` 类型导入，移除方法内的重复导入
-  3. ✅ 修复 `tensor.rs` 中的类型不匹配：将 `p_id` 转换为 `u8` 进行比较（`record.player_id as usize == p_id`）
-  4. ✅ 安装 maturin: `pip install maturin`
-  5. ✅ 创建虚拟环境: `python3 -m venv .venv`
-  6. ✅ 编译并安装: `source .venv/bin/activate && cd rust && python3 -m maturin develop`
-  7. ✅ 验证导入: `import scai_engine` 和 `import scai` 成功
+  3. ✅ 修复 `game_state.rs` 中的借用检查器错误：重构 `set_player_hand` 方法，先解析所有牌字符串，再获取可变借用
+  4. ✅ 修复 `tensor.rs` 中的类型不匹配：将 `p_id` 转换为 `u8` 进行比较（`record.player_id as usize == p_id`）
+  5. ✅ 安装 maturin: `pip install maturin`
+  6. ✅ 创建虚拟环境: `python3 -m venv .venv`
+  7. ✅ 编译并安装: `source .venv/bin/activate && cd rust && maturin develop`
+  8. ✅ 验证导入: `import scai_engine` 和 `import scai` 成功
 - 📝 **安装步骤**:
   ```bash
   # 1. 创建虚拟环境（如果还没有）
