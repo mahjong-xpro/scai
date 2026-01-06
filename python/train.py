@@ -263,6 +263,39 @@ def main():
     # 经验回放缓冲区
     buffer = ReplayBuffer(capacity=training_config.get('buffer_capacity', 100000))
     
+    # 课程学习（如果启用）- 必须在奖励函数之前初始化
+    curriculum = None
+    document_generator = None
+    if HAS_COACH:
+        curriculum_config = config.get('curriculum_learning', {})
+        if curriculum_config.get('enabled', False):
+            # 创建文档生成器
+            doc_output_dir = curriculum_config.get('document_output_dir', './coach_documents')
+            document_generator = TrainingDocumentGenerator(output_dir=doc_output_dir)
+            
+            # 创建课程学习规划器
+            curriculum = CurriculumLearning(document_generator=document_generator)
+            
+            # 设置初始阶段（如果配置中指定）
+            initial_stage_str = curriculum_config.get('initial_stage', 'declare_suit')
+            if initial_stage_str == 'declare_suit':
+                curriculum.current_stage = TrainingStage.DECLARE_SUIT
+            elif initial_stage_str == 'learn_win':
+                curriculum.current_stage = TrainingStage.LEARN_WIN
+            elif initial_stage_str == 'basic':
+                curriculum.current_stage = TrainingStage.BASIC
+            elif initial_stage_str == 'defensive':
+                curriculum.current_stage = TrainingStage.DEFENSIVE
+            elif initial_stage_str == 'advanced':
+                curriculum.current_stage = TrainingStage.ADVANCED
+            elif initial_stage_str == 'expert':
+                curriculum.current_stage = TrainingStage.EXPERT
+            else:
+                logger.warning(f"Unknown initial stage: {initial_stage_str}, using DECLARE_SUIT")
+                curriculum.current_stage = TrainingStage.DECLARE_SUIT
+            
+            logger.info(f"Curriculum learning enabled, initial stage: {curriculum.current_stage.value}")
+    
     # 奖励函数（初始配置，会根据课程学习阶段动态调整）
     initial_reward_config = {}
     if curriculum:
@@ -337,36 +370,6 @@ def main():
                 symmetry_prob=aug_config.get('symmetry_prob', 0.5),
             )
             logger.info("Data augmentation enabled")
-    
-    # 课程学习（如果启用）
-    curriculum = None
-    document_generator = None
-    if HAS_COACH:
-        curriculum_config = config.get('curriculum_learning', {})
-        if curriculum_config.get('enabled', False):
-            # 创建文档生成器
-            doc_output_dir = curriculum_config.get('document_output_dir', './coach_documents')
-            document_generator = TrainingDocumentGenerator(output_dir=doc_output_dir)
-            
-            # 创建课程学习规划器
-            curriculum = CurriculumLearning(document_generator=document_generator)
-            
-            # 设置初始阶段（如果配置中指定）
-            initial_stage_str = curriculum_config.get('initial_stage', 'declare_suit')
-            if initial_stage_str == 'declare_suit':
-                curriculum.current_stage = TrainingStage.DECLARE_SUIT
-            elif initial_stage_str == 'learn_win':
-                curriculum.current_stage = TrainingStage.LEARN_WIN
-            elif initial_stage_str == 'basic':
-                curriculum.current_stage = TrainingStage.BASIC
-            elif initial_stage_str == 'defensive':
-                curriculum.current_stage = TrainingStage.DEFENSIVE
-            elif initial_stage_str == 'advanced':
-                curriculum.current_stage = TrainingStage.ADVANCED
-            elif initial_stage_str == 'expert':
-                curriculum.current_stage = TrainingStage.EXPERT
-            
-            logger.info(f"Curriculum learning enabled (document generation mode), initial stage: {curriculum.current_stage.value}")
             
             # 启动 Web 仪表板（如果启用）
             dashboard_config = curriculum_config.get('dashboard', {})
