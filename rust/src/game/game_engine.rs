@@ -176,7 +176,7 @@ impl GameEngine {
             },
             Action::DeclareSuit { .. } => {
                 // 定缺动作应该在 run() 方法的定缺阶段处理，不应该在这里
-                Err(GameError::InvalidAction)
+                Err(GameError::SuitNotDeclared)
             }
         }
     }
@@ -521,7 +521,7 @@ impl GameEngine {
         let win_result = checker.check_win_with_melds(&hand, melds_count);
         
         if !win_result.is_win {
-            return Err(GameError::InvalidAction);
+            return Err(GameError::IllegalAction);
         }
         
         // 设置动作触发标志
