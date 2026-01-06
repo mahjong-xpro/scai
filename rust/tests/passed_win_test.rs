@@ -56,39 +56,42 @@ fn test_passed_win_restriction() {
 
 #[test]
 fn test_record_passed_win_multiple_times() {
-    // 测试多次过胡的情况
+    // 测试多次过胡的情况：应该记录最大番数（而不是最小番数）
     
     let mut player = Player::new(0);
     
-    // 第一次过胡：放弃 3 番（1万）
-    player.record_passed_win(Tile::Wan(1), 3);
-    assert_eq!(player.passed_hu_fan, Some(3));
+    // 第一次过胡：放弃 2 番（1万）
+    player.record_passed_win(Tile::Wan(1), 2);
+    assert_eq!(player.passed_hu_fan, Some(2));
     assert_eq!(player.passed_hu_tile, Some(Tile::Wan(1)));
     
-    // 第二次过胡：放弃 2 番（2万，应该更新为更小的值，更严格的限制）
-    player.record_passed_win(Tile::Wan(2), 2);
-    assert_eq!(player.passed_hu_fan, Some(2));
-    assert_eq!(player.passed_hu_tile, Some(Tile::Wan(2)));
+    // 第二次过胡：放弃 1 番（2万，不应该更新，因为 1 < 2，应该保持 2）
+    player.record_passed_win(Tile::Wan(2), 1);
+    assert_eq!(player.passed_hu_fan, Some(2)); // 应该是 2，不是 1
+    assert_eq!(player.passed_hu_tile, Some(Tile::Wan(1))); // 应该保持第一次的牌
     
-    // 第三次过胡：放弃 5 番（3万，不应该更新，因为 5 > 2）
+    // 第三次过胡：放弃 5 番（3万，应该更新，因为 5 > 2）
     player.record_passed_win(Tile::Wan(3), 5);
-    assert_eq!(player.passed_hu_fan, Some(2));
-    assert_eq!(player.passed_hu_tile, Some(Tile::Wan(2)));
+    assert_eq!(player.passed_hu_fan, Some(5)); // 应该是 5
+    assert_eq!(player.passed_hu_tile, Some(Tile::Wan(3))); // 应该更新为第三次的牌
     
-    // 检查：不能胡 1 番和 2 番，但可以胡 3 番及以上（不同牌）
+    // 检查：不能胡 1 番、2 番、3 番、4 番和 5 番，但可以胡 6 番及以上（不同牌）
     assert!(!rules::check_passed_win_restriction(
         Tile::Wan(4), 1, player.passed_hu_fan, player.passed_hu_tile, false
     ));
     assert!(!rules::check_passed_win_restriction(
         Tile::Wan(4), 2, player.passed_hu_fan, player.passed_hu_tile, false
     ));
+    assert!(!rules::check_passed_win_restriction(
+        Tile::Wan(4), 5, player.passed_hu_fan, player.passed_hu_tile, false
+    ));
     assert!(rules::check_passed_win_restriction(
-        Tile::Wan(4), 3, player.passed_hu_fan, player.passed_hu_tile, false
+        Tile::Wan(4), 6, player.passed_hu_fan, player.passed_hu_tile, false
     ));
     
-    // 检查：不能胡同一张牌（2万），即使番数更高
+    // 检查：不能胡同一张牌（3万），即使番数更高
     assert!(!rules::check_passed_win_restriction(
-        Tile::Wan(2), 5, player.passed_hu_fan, player.passed_hu_tile, false
+        Tile::Wan(3), 10, player.passed_hu_fan, player.passed_hu_tile, false
     ));
 }
 

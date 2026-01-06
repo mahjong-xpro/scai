@@ -182,7 +182,20 @@ impl Player {
     /// - `tile`: 放弃的牌
     /// - `fans`: 放弃的点炮番数
     /// 
-    /// 如果当前没有过胡记录，或新的番数更小，则更新记录
+    /// # 规则
+    /// 
+    /// 如果玩家多次过胡，记录最大番数（最严格的限制）。
+    /// 例如：如果玩家先放弃了 2 番，然后放弃了 1 番，
+    /// 应该记录 2 番（因为不能胡 2 番或更低的点炮）。
+    /// 
+    /// 如果当前没有过胡记录，或新的番数更大，则更新记录。
+    /// 
+    /// # 为什么记录最大番数？
+    /// 
+    /// 规则：放弃点炮后，不能胡同番或低番的点炮。
+    /// 如果玩家先放弃了 2 番，然后放弃了 1 番：
+    /// - 如果记录 1 番，玩家可以胡 2 番的点炮（错误！）
+    /// - 如果记录 2 番，玩家不能胡 2 番或更低的点炮（正确！）
     pub fn record_passed_win(&mut self, tile: Tile, fans: u32) {
         match self.passed_hu_fan {
             None => {
@@ -191,11 +204,14 @@ impl Player {
                 self.passed_hu_tile = Some(tile);
             }
             Some(existing_fans) => {
-                // 如果新的番数更小，更新记录（取更严格的限制）
-                if fans < existing_fans {
+                // 记录最大番数（更严格的限制）
+                // 规则：不能胡同番或低番的点炮，所以应该记录最高番数
+                if fans > existing_fans {
                     self.passed_hu_fan = Some(fans);
                     self.passed_hu_tile = Some(tile);
                 }
+                // 注意：如果 fans <= existing_fans，不需要更新
+                // 因为 existing_fans 已经是更严格的限制了
             }
         }
     }
