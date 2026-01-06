@@ -356,7 +356,6 @@ impl GameEngine {
         
         // 3. 游戏主循环
         let mut max_turns = 200; // 最大回合数限制，防止无限循环
-        let initial_turn = self.state.turn;
         
         while !self.state.is_game_over() && max_turns > 0 {
             max_turns -= 1;
