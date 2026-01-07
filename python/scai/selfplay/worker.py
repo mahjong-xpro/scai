@@ -248,6 +248,10 @@ class SelfPlayWorker:
                     continue
                 print(f"Worker {self.worker_id}, Game {game_id}, Turn {turn_count}, Failed to get state: {e}")
                 # 如果状态获取失败，结束游戏
+                # 确保轨迹数据完整（如果已经有状态，确保有对应的奖励）
+                if len(trajectory['states']) > len(trajectory['rewards']):
+                    missing = len(trajectory['states']) - len(trajectory['rewards'])
+                    trajectory['rewards'].extend([0.0] * missing)
                 break
             
             # 检查玩家是否已离场
@@ -269,6 +273,10 @@ class SelfPlayWorker:
             remaining = engine.remaining_tiles()
             if remaining == 0:
                 # 牌墙已空，游戏结束（流局）
+                # 确保轨迹数据完整（如果已经有状态，确保有对应的奖励）
+                if len(trajectory['states']) > len(trajectory['rewards']):
+                    missing = len(trajectory['states']) - len(trajectory['rewards'])
+                    trajectory['rewards'].extend([0.0] * missing)
                 # 标记最后一个状态为done
                 if len(trajectory.get('readable_states', [])) > 0:
                     trajectory['readable_states'][-1]['game_end_reason'] = 'wall_empty'
@@ -291,17 +299,33 @@ class SelfPlayWorker:
                         error_msg = draw_result.get('error', 'Unknown error')
                         if 'WallEmpty' in str(error_msg):
                             # 牌墙已空，正常结束
+                            # 确保轨迹数据完整
+                            if len(trajectory['states']) > len(trajectory['rewards']):
+                                missing = len(trajectory['states']) - len(trajectory['rewards'])
+                                trajectory['rewards'].extend([0.0] * missing)
                             break
                         print(f"Worker {self.worker_id}, Game {game_id}, Turn {turn_count}, Draw error: {error_msg}")
+                        # 确保轨迹数据完整
+                        if len(trajectory['states']) > len(trajectory['rewards']):
+                            missing = len(trajectory['states']) - len(trajectory['rewards'])
+                            trajectory['rewards'].extend([0.0] * missing)
                         break
                     # 摸牌成功，继续处理
             except Exception as e:
                 error_str = str(e)
                 if 'WallEmpty' in error_str:
                     # 牌墙已空，正常结束
+                    # 确保轨迹数据完整
+                    if len(trajectory['states']) > len(trajectory['rewards']):
+                        missing = len(trajectory['states']) - len(trajectory['rewards'])
+                        trajectory['rewards'].extend([0.0] * missing)
                     break
                 print(f"Worker {self.worker_id}, Game {game_id}, Turn {turn_count}, Draw error: {e}")
                 # 如果摸牌失败，可能是游戏结束
+                # 确保轨迹数据完整
+                if len(trajectory['states']) > len(trajectory['rewards']):
+                    missing = len(trajectory['states']) - len(trajectory['rewards'])
+                    trajectory['rewards'].extend([0.0] * missing)
                 break
             
             # 摸牌后，重新获取游戏状态（因为摸牌会更新状态）
@@ -316,6 +340,10 @@ class SelfPlayWorker:
                         break
                     continue
                 print(f"Worker {self.worker_id}, Game {game_id}, Turn {turn_count}, Failed to get state after draw: {e}")
+                # 确保轨迹数据完整
+                if len(trajectory['states']) > len(trajectory['rewards']):
+                    missing = len(trajectory['states']) - len(trajectory['rewards'])
+                    trajectory['rewards'].extend([0.0] * missing)
                 break
             
             # 获取游戏状态张量

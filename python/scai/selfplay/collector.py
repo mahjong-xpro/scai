@@ -303,12 +303,21 @@ class DataCollector:
             # 选择有代表性的游戏保存到dashboard（每10个游戏选1个，或者最终得分高的）
             if is_valid and len(trajectory['states']) > 0:
                 final_score = trajectory.get('final_score', 0.0)
-                # 选择条件：1) 每10个游戏选1个，2) 最终得分>0的，3) 步骤数>10的（完整的游戏）
+                num_steps = len(trajectory['states'])
+                # 检查轨迹完整性：状态、动作、奖励、done标志数量应该一致
+                is_complete = (
+                    len(trajectory['states']) == len(trajectory['actions']) and
+                    len(trajectory['states']) == len(trajectory['rewards']) and
+                    len(trajectory['states']) == len(trajectory['dones']) and
+                    len(trajectory.get('readable_states', [])) == num_steps
+                )
+                # 选择条件：1) 每10个游戏选1个，2) 最终得分>0的，3) 步骤数>50的长游戏
+                # 但必须确保轨迹完整（所有数据长度一致）
                 should_save = (
                     (traj_idx % 10 == 0) or  # 每10个选1个
                     (final_score > 0) or  # 有得分的游戏
-                    (len(trajectory['states']) > 50)  # 长游戏
-                ) and len(trajectory['states']) > 10  # 至少10步
+                    (num_steps > 50)  # 长游戏
+                ) and num_steps > 10 and is_complete  # 至少10步且轨迹完整
                 
                 if should_save:
                     # 生成唯一的game_id（使用时间戳基础 + 迭代次数 + 轨迹索引）
