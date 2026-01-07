@@ -18,6 +18,21 @@ import argparse
 import os
 import sys
 import yaml
+
+# 在导入 torch 之前，完全清除可能存在的无效 CUDA_VISIBLE_DEVICES
+# 这样可以避免 CUDA 初始化错误（Error 101: invalid device ordinal）
+# 我们会在 setup_gpu_config 中根据实际 GPU 数量重新设置
+# 
+# 注意：即使环境变量看起来是空的或有效的，如果之前设置过无效值，
+# PyTorch 的 CUDA 上下文可能已经被污染，需要完全清除
+if "CUDA_VISIBLE_DEVICES" in os.environ:
+    cuda_visible = os.environ["CUDA_VISIBLE_DEVICES"]
+    # 完全清除，无论当前值是什么
+    # 这样可以重置 PyTorch 的 CUDA 上下文
+    del os.environ["CUDA_VISIBLE_DEVICES"]
+    # 注意：如果之前已经导入过 torch，清除环境变量可能不够
+    # 但这是我们能做的最好的处理
+
 import torch
 import numpy as np
 import signal
@@ -153,15 +168,31 @@ def setup_gpu_config(config: Dict, logger) -> Tuple[str, int]:
 
     device_ids = gpu_config.get('device_ids', [])
     
-    # 首先检查 CUDA 是否可用（在设置 CUDA_VISIBLE_DEVICES 之前）
-    if not torch.cuda.is_available():
-        logger.warning("CUDA not available, falling back to CPU.")
+    # 注意：CUDA_VISIBLE_DEVICES 在导入 torch 时已被清除
+    # 现在检查真实的 GPU 数量（应该能看到所有 GPU）
+    try:
+        cuda_available = torch.cuda.is_available()
+        if not cuda_available:
+            logger.warning("CUDA not available, falling back to CPU.")
+            logger.warning("Note: If nvidia-smi shows GPUs, this might be a PyTorch CUDA version mismatch.")
+            os.environ["CUDA_VISIBLE_DEVICES"] = ""
+            return 'cpu', 0
+        
+        # 获取系统实际可用的 GPU 数量
+        total_gpus = torch.cuda.device_count()
+        if total_gpus == 0:
+            logger.warning("No GPUs detected by PyTorch, falling back to CPU.")
+            logger.warning("Note: If nvidia-smi shows GPUs, check PyTorch CUDA version compatibility.")
+            os.environ["CUDA_VISIBLE_DEVICES"] = ""
+            return 'cpu', 0
+        
+        logger.info(f"System has {total_gpus} GPU(s) available (detected by PyTorch)")
+    except Exception as e:
+        logger.warning(f"Error checking CUDA availability: {e}")
+        logger.warning("This might be due to invalid CUDA_VISIBLE_DEVICES or PyTorch CUDA version mismatch.")
+        logger.warning("Falling back to CPU.")
         os.environ["CUDA_VISIBLE_DEVICES"] = ""
         return 'cpu', 0
-    
-    # 获取系统实际可用的 GPU 数量
-    total_gpus = torch.cuda.device_count()
-    logger.info(f"System has {total_gpus} GPU(s) available")
     
     if not device_ids:
         logger.info("GPU enabled but no specific device_ids provided. Using all available GPUs.")
