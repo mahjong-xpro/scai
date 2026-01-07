@@ -848,10 +848,31 @@ HTML_TEMPLATE = """
             
             listDiv.style.display = 'none';
             viewerDiv.style.display = 'block';
+            contentDiv.innerHTML = '<div class="loading">加载中...</div>';
             
             try {
                 const response = await fetch(`/api/replays/${gameId}`);
+                
+                // 检查响应状态
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({error: 'Unknown error'}));
+                    throw new Error(errorData.error || `HTTP ${response.status}`);
+                }
+                
                 const replay = await response.json();
+                
+                // 检查数据格式
+                if (!replay || !replay.trajectory) {
+                    throw new Error('Invalid replay data: missing trajectory');
+                }
+                
+                if (!replay.trajectory.states || !Array.isArray(replay.trajectory.states)) {
+                    throw new Error('Invalid replay data: missing or invalid states');
+                }
+                
+                if (replay.trajectory.states.length === 0) {
+                    throw new Error('Invalid replay data: empty trajectory');
+                }
                 
                 currentReplay = replay;
                 currentReplayStep = 0;
@@ -864,7 +885,16 @@ HTML_TEMPLATE = """
                 renderReplayStep(0);
             } catch (e) {
                 console.error('Error loading replay:', e);
-                contentDiv.innerHTML = '<div style="text-align: center; color: #c62828; padding: 40px;">加载失败</div>';
+                const errorMsg = e.message || '加载失败';
+                contentDiv.innerHTML = `
+                    <div style="text-align: center; color: #c62828; padding: 40px;">
+                        <div style="font-size: 18px; margin-bottom: 8px;">加载失败</div>
+                        <div style="font-size: 14px; color: #999;">${errorMsg}</div>
+                        <button onclick="showReplayList()" style="margin-top: 16px; padding: 8px 16px; background: #667eea; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                            返回列表
+                        </button>
+                    </div>
+                `;
             }
         }
         
@@ -905,6 +935,25 @@ HTML_TEMPLATE = """
             const action = actions[step];
             const reward = rewards[step];
             
+            // 获取状态信息
+            let stateInfo = 'N/A';
+            if (state) {
+                if (Array.isArray(state)) {
+                    // 如果是数组，显示维度信息
+                    const dims = getArrayDimensions(state);
+                    stateInfo = `数组维度: ${dims}`;
+                } else if (typeof state === 'object' && state !== null) {
+                    // 如果是对象，尝试获取shape
+                    if (state.shape) {
+                        stateInfo = `形状: [${state.shape.join(', ')}]`;
+                    } else {
+                        stateInfo = `对象 (${Object.keys(state).length} 个键)`;
+                    }
+                } else {
+                    stateInfo = typeof state;
+                }
+            }
+            
             // 简化显示（实际可以根据需要扩展）
             contentDiv.innerHTML = `
                 <div style="background: white; padding: 16px; border-radius: 8px;">
@@ -913,15 +962,29 @@ HTML_TEMPLATE = """
                         <strong>动作:</strong> ${formatAction(action)}
                     </div>
                     <div style="margin-bottom: 8px;">
-                        <strong>奖励:</strong> <span style="color: ${reward >= 0 ? '#43e97b' : '#ff6b6b'}">${reward.toFixed(3)}</span>
+                        <strong>奖励:</strong> <span style="color: ${reward >= 0 ? '#43e97b' : '#ff6b6b'}">${typeof reward === 'number' ? reward.toFixed(3) : reward}</span>
                     </div>
                     <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid #e0e0e0;">
                         <div style="color: #666; font-size: 14px;">
-                            <strong>状态信息:</strong> 状态张量形状 ${state ? JSON.stringify(state.shape || 'N/A') : 'N/A'}
+                            <strong>状态信息:</strong> ${stateInfo}
                         </div>
                     </div>
                 </div>
             `;
+        }
+        
+        // 获取数组维度
+        function getArrayDimensions(arr) {
+            if (!Array.isArray(arr)) {
+                return '非数组';
+            }
+            let dims = [];
+            let current = arr;
+            while (Array.isArray(current) && current.length > 0) {
+                dims.push(current.length);
+                current = current[0];
+            }
+            return dims.length > 0 ? dims.join(' × ') : '空数组';
         }
         
         // 格式化动作
@@ -1100,13 +1163,56 @@ def get_replays():
 @app.route('/api/replays/<int:game_id>')
 def get_replay(game_id: int):
     """获取单个游戏回放"""
-    state_manager = get_state_manager()
-    replay = state_manager.get_game_replay(game_id)
+    import numpy as np
+    import logging
     
-    if replay is None:
-        return jsonify({'error': 'Game not found'}), 404
+    logger = logging.getLogger(__name__)
     
-    return jsonify(replay)
+    try:
+        state_manager = get_state_manager()
+        replay = state_manager.get_game_replay(game_id)
+        
+        if replay is None:
+            logger.warning(f"Game {game_id} not found in replay storage")
+            return jsonify({'error': f'Game {game_id} not found'}), 404
+        
+        # 处理numpy数组的序列化
+        def convert_numpy(obj):
+            """递归转换numpy数组为列表"""
+            if isinstance(obj, np.ndarray):
+                return obj.tolist()
+            elif isinstance(obj, (np.integer, np.floating)):
+                return obj.item()
+            elif isinstance(obj, dict):
+                return {k: convert_numpy(v) for k, v in obj.items()}
+            elif isinstance(obj, list):
+                return [convert_numpy(item) for item in obj]
+            return obj
+        
+        # 转换轨迹数据中的numpy数组
+        if 'trajectory' in replay:
+            try:
+                replay = convert_numpy(replay)
+            except Exception as e:
+                logger.error(f"Error converting numpy arrays in replay {game_id}: {e}")
+                return jsonify({'error': f'Failed to serialize replay data: {str(e)}'}), 500
+        
+        # 验证数据完整性
+        if 'trajectory' not in replay:
+            logger.error(f"Replay {game_id} missing trajectory data")
+            return jsonify({'error': 'Invalid replay data: missing trajectory'}), 500
+        
+        trajectory = replay['trajectory']
+        if 'states' not in trajectory or not trajectory['states']:
+            logger.error(f"Replay {game_id} has empty or missing states")
+            return jsonify({'error': 'Invalid replay data: empty states'}), 500
+        
+        logger.info(f"Successfully retrieved replay {game_id} with {len(trajectory.get('states', []))} steps")
+        return jsonify(replay)
+        
+    except Exception as e:
+        logger.error(f"Error retrieving replay {game_id}: {e}", exc_info=True)
+        return jsonify({'error': f'Internal server error: {str(e)}'}), 500
 
 
 @app.route('/api/stream')

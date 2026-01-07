@@ -282,8 +282,10 @@ class DataCollector:
                 ) and len(trajectory['states']) > 10  # 至少10步
                 
                 if should_save:
+                    # 生成唯一的game_id（使用迭代次数和轨迹索引的组合）
+                    unique_game_id = (current_iteration or 0) * 10000 + traj_idx
                     games_to_replay.append({
-                        'game_id': traj_idx,
+                        'game_id': unique_game_id,
                         'iteration': current_iteration,
                         'trajectory': trajectory,
                         'game_info': {
