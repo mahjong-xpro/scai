@@ -460,12 +460,15 @@ def main():
                 symmetry_prob=aug_config.get('symmetry_prob', 0.5),
             )
             logger.info("Data augmentation enabled")
-            
-            # 启动 Web 仪表板（如果启用）
-            dashboard_config = curriculum_config.get('dashboard', {})
-            if dashboard_config.get('enabled', False):
-                dashboard_port = dashboard_config.get('port', 5000)
-                dashboard_host = dashboard_config.get('host', '0.0.0.0')
+    
+    # 启动 Web 仪表板（如果启用课程学习）
+    if HAS_COACH and curriculum is not None:
+        curriculum_config = config.get('curriculum_learning', {})
+        dashboard_config = curriculum_config.get('dashboard', {})
+        if dashboard_config.get('enabled', False):
+            dashboard_port = dashboard_config.get('port', 5000)
+            dashboard_host = dashboard_config.get('host', '0.0.0.0')
+            try:
                 # 在后台线程启动 Web 服务器
                 dashboard_thread = threading.Thread(
                     target=start_server,
@@ -473,7 +476,12 @@ def main():
                     daemon=True,
                 )
                 dashboard_thread.start()
+                # 等待一下确保线程启动
+                time.sleep(0.5)
                 logger.info(f"课程学习中心 Web 仪表板已启动: http://{dashboard_host}:{dashboard_port}")
+            except Exception as e:
+                logger.error(f"启动 Web 仪表板失败: {e}")
+                logger.warning("仪表板将不可用，但训练可以继续")
     
     # 搜索增强推理（如果启用）
     ismcts = None
