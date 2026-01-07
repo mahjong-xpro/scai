@@ -348,8 +348,11 @@ class DataValidator:
         
         # 检查奖励序列的合理性（只记录到统计信息，不输出警告）
         rewards = trajectory['rewards']
-        if all(r == 0 for r in rewards):
-            self.validation_stats['warnings'].append(f"Trajectory {trajectory_id}: All rewards are zero")
+        # 使用更宽松的检查：考虑浮点数精度问题，使用小的阈值
+        # 如果所有奖励的绝对值都小于阈值，才认为是"all zero"
+        threshold = 1e-6
+        if len(rewards) > 0 and all(abs(float(r)) < threshold for r in rewards):
+            self.validation_stats['warnings'].append(f"Trajectory {trajectory_id}: All rewards are zero (all < {threshold})")
         
         # 检查价值估计的合理性（应该与奖励相关）
         values = trajectory['values']

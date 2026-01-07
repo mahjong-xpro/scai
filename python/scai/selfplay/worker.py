@@ -83,9 +83,12 @@ class SelfPlayWorker:
         
         # 初始化奖励函数（使用传入的 reward_config，确保与主进程一致）
         self.reward_shaping = RewardShaping(reward_config=reward_config or {})
-        # 调试信息：打印reward_config（仅第一个worker打印一次）
+        # 调试信息：打印reward_config摘要（仅第一个worker打印一次）
         if self.worker_id == 0:
-            print(f"Worker {self.worker_id}: RewardShaping initialized with reward_config: {self.reward_shaping.reward_config}")
+            lack_discard = self.reward_shaping.reward_config.get('lack_color_discard', 0.0)
+            raw_score_only = self.reward_shaping.reward_config.get('raw_score_only', False)
+            if lack_discard > 0 or not raw_score_only:
+                print(f"Worker {self.worker_id}: RewardShaping initialized - lack_color_discard={lack_discard}, raw_score_only={raw_score_only}")
         
         # 初始化喂牌生成器（如果启用）
         if self.use_feeding and self.feeding_config:
@@ -100,13 +103,12 @@ class SelfPlayWorker:
         """更新奖励配置（用于curriculum学习阶段变化时）"""
         old_config = self.reward_shaping.reward_config.copy() if self.reward_shaping.reward_config else {}
         self.reward_shaping.reward_config = reward_config.copy() if reward_config else {}
-        # 调试信息：打印更新前后的配置
+        # 调试信息：打印更新摘要（仅第一个worker，仅当配置变化时）
         if self.worker_id == 0:
-            print(f"Worker {self.worker_id}: Updated reward_config")
-            print(f"  Old: {old_config}")
-            print(f"  New: {self.reward_shaping.reward_config}")
-            print(f"  lack_color_discard: {self.reward_shaping.reward_config.get('lack_color_discard', 'NOT_FOUND')}")
-            print(f"  raw_score_only: {self.reward_shaping.reward_config.get('raw_score_only', False)}")
+            old_lack = old_config.get('lack_color_discard', 0.0)
+            new_lack = self.reward_shaping.reward_config.get('lack_color_discard', 0.0)
+            if old_lack != new_lack:
+                print(f"Worker {self.worker_id}: Updated reward_config - lack_color_discard: {old_lack} -> {new_lack}")
     
     def play_game(
         self,
@@ -222,8 +224,9 @@ class SelfPlayWorker:
         max_turns = 200
         turn_count = 0
         
-        # 记录每个玩家的弃牌历史（用于回放）
-        player_discards = {0: [], 1: [], 2: [], 3: []}
+        # 记录每个玩家在每个回合的弃牌（用于回放）
+        # 格式: {player_id: {turn: [tile_index, ...]}}
+        player_discards_by_turn = {0: {}, 1: {}, 2: {}, 3: {}}
         
         while not engine.is_game_over() and turn_count < max_turns:
             turn_count += 1
@@ -257,7 +260,12 @@ class SelfPlayWorker:
             # 检查牌墙是否为空，避免 WallEmpty 错误
             remaining = engine.remaining_tiles()
             if remaining == 0:
-                # 牌墙已空，游戏结束
+                # 牌墙已空，游戏结束（流局）
+                # 标记最后一个状态为done
+                if len(trajectory.get('readable_states', [])) > 0:
+                    trajectory['readable_states'][-1]['game_end_reason'] = 'wall_empty'
+                if len(trajectory.get('dones', [])) > 0:
+                    trajectory['dones'][-1] = True
                 break
             
             try:
@@ -385,10 +393,17 @@ class SelfPlayWorker:
             # 保存可读的游戏状态信息（用于回放）
             # 注意：这里保存的是动作执行前的状态，弃牌会在动作执行后更新
             try:
-                readable_state = self._extract_readable_state(state, engine, current_player, turn_count)
-                # 添加弃牌信息（从player_discards获取，此时是动作执行前的弃牌）
+                # 使用state.turn作为游戏回合数（更准确）
+                game_turn = state.turn
+                readable_state = self._extract_readable_state(state, engine, current_player, game_turn)
+                # 添加弃牌信息（只显示到当前回合的弃牌）
                 for i, player_info in enumerate(readable_state.get('players', [])):
-                    player_info['discards'] = [self._tile_index_to_name(idx) for idx in player_discards.get(i, [])]
+                    # 收集该玩家在当前回合及之前的所有弃牌
+                    discards_for_player = []
+                    for turn in range(game_turn + 1):  # 包含当前回合
+                        if turn in player_discards_by_turn[i]:
+                            discards_for_player.extend(player_discards_by_turn[i][turn])
+                    player_info['discards'] = [self._tile_index_to_name(idx) for idx in discards_for_player]
                 trajectory.setdefault('readable_states', []).append(readable_state)
             except Exception as e:
                 # 如果提取失败，保存基本信息
@@ -430,11 +445,6 @@ class SelfPlayWorker:
             lack_color_discard = False
             if action_type == "discard" and tile_index is not None and declared_suit is not None:
                 lack_color_discard = self._is_lack_color_tile(tile_index, declared_suit)
-                # 调试信息（仅在前几个游戏中打印）
-                if game_id < 3 and turn_count < 5:
-                    reward_config_value = self.reward_shaping.reward_config.get('lack_color_discard', 0.0)
-                    if lack_color_discard:
-                        print(f"Worker {self.worker_id}, Game {game_id}, Turn {turn_count}: 检测到缺门弃牌! tile_index={tile_index}, declared_suit={declared_suit}, reward_config['lack_color_discard']={reward_config_value}")
             
             # 执行动作
             is_hu = False
@@ -448,25 +458,42 @@ class SelfPlayWorker:
                 
                 # 如果动作是出牌，记录弃牌（动作执行后）
                 if action_type == "discard" and tile_index is not None:
-                    player_discards[current_player].append(tile_index)
+                    # 获取当前游戏回合数
+                    try:
+                        updated_state = engine.state
+                        game_turn = updated_state.turn
+                        # 按回合记录弃牌
+                        if game_turn not in player_discards_by_turn[current_player]:
+                            player_discards_by_turn[current_player][game_turn] = []
+                        player_discards_by_turn[current_player][game_turn].append(tile_index)
+                    except Exception:
+                        # 如果获取状态失败，使用turn_count作为fallback
+                        if turn_count not in player_discards_by_turn[current_player]:
+                            player_discards_by_turn[current_player][turn_count] = []
+                        player_discards_by_turn[current_player][turn_count].append(tile_index)
                 
                 # 更新状态以获取最新信息（用于奖励计算）
                 try:
                     state = engine.state
                     is_ready_after = state.is_player_ready(current_player)
                     is_flower_pig = self._check_flower_pig(state, current_player)
+                    game_turn = state.turn
                     
                     # 更新可读状态中的副牌信息（动作执行后）
                     if len(trajectory.get('readable_states', [])) > 0:
                         last_readable_state = trajectory['readable_states'][-1]
                         # 重新提取状态以获取最新的副牌信息
-                        updated_state = self._extract_readable_state(state, engine, current_player, turn_count)
+                        updated_state = self._extract_readable_state(state, engine, current_player, game_turn)
                         # 更新副牌和弃牌信息
                         for i, player in enumerate(updated_state.get('players', [])):
                             if i < len(last_readable_state.get('players', [])):
                                 last_readable_state['players'][i]['melds'] = player.get('melds', [])
-                                # 更新弃牌信息（转换为牌名）
-                                last_readable_state['players'][i]['discards'] = [self._tile_index_to_name(idx) for idx in player_discards.get(i, [])]
+                                # 更新弃牌信息（只显示到当前回合的弃牌）
+                                discards_for_player = []
+                                for turn in range(game_turn + 1):  # 包含当前回合
+                                    if turn in player_discards_by_turn[i]:
+                                        discards_for_player.extend(player_discards_by_turn[i][turn])
+                                last_readable_state['players'][i]['discards'] = [self._tile_index_to_name(idx) for idx in discards_for_player]
                 except Exception as e:
                     error_str = str(e)
                     # 如果是状态验证错误，使用默认值并继续（验证可能过于严格）
@@ -522,12 +549,6 @@ class SelfPlayWorker:
                         is_flower_pig=is_flower_pig,
                         lack_color_discard=lack_color_discard,
                     )
-                    # 调试信息（仅在前几个游戏中打印）
-                    if game_id < 3 and turn_count < 5 and lack_color_discard:
-                        print(f"Worker {self.worker_id}, Game {game_id}, Turn {turn_count}: 计算后的奖励={reward}, lack_color_discard={lack_color_discard}")
-                        print(f"  reward_config={self.reward_shaping.reward_config}")
-                        print(f"  raw_score_only={self.reward_shaping.reward_config.get('raw_score_only', False)}")
-                        print(f"  lack_color_discard value={self.reward_shaping.reward_config.get('lack_color_discard', 'NOT_FOUND')}")
                     trajectory['rewards'].append(reward)
                 
             except Exception as e:
@@ -539,6 +560,43 @@ class SelfPlayWorker:
         # 如果游戏正常结束，设置最后一个时间步的 done 标志
         if len(trajectory['dones']) > 0 and not trajectory['dones'][-1]:
             trajectory['dones'][-1] = True
+        
+        # 添加游戏结束信息到最后一个状态
+        if len(trajectory.get('readable_states', [])) > 0:
+            final_state = trajectory['readable_states'][-1]
+            final_state['game_end'] = True
+            try:
+                state = engine.state
+                # 检查游戏结束原因
+                if state.is_last_tile:
+                    final_state['game_end_reason'] = 'wall_empty'  # 流局
+                elif hasattr(state, 'out_count') and state.out_count >= 3:
+                    final_state['game_end_reason'] = 'three_players_out'  # 3家和牌
+                else:
+                    final_state['game_end_reason'] = 'unknown'
+                
+                final_state['out_count'] = state.out_count if hasattr(state, 'out_count') else 0
+                final_state['is_last_tile'] = state.is_last_tile if hasattr(state, 'is_last_tile') else False
+                
+                # 更新最终弃牌信息（显示所有弃牌）
+                game_turn = state.turn
+                for i, player_info in enumerate(final_state.get('players', [])):
+                    discards_for_player = []
+                    for turn in range(game_turn + 1):
+                        if turn in player_discards_by_turn[i]:
+                            discards_for_player.extend(player_discards_by_turn[i][turn])
+                    player_info['discards'] = [self._tile_index_to_name(idx) for idx in discards_for_player]
+            except Exception:
+                # 如果获取状态失败，尝试使用最后的turn_count
+                try:
+                    for i, player_info in enumerate(final_state.get('players', [])):
+                        discards_for_player = []
+                        for turn in range(turn_count + 1):
+                            if turn in player_discards_by_turn[i]:
+                                discards_for_player.extend(player_discards_by_turn[i][turn])
+                        player_info['discards'] = [self._tile_index_to_name(idx) for idx in discards_for_player]
+                except Exception:
+                    pass
         
         # 确保奖励数量与状态数量一致
         # 注意：奖励已经在动作执行后计算并添加，这里只需要确保数量一致
@@ -725,7 +783,14 @@ class SelfPlayWorker:
             'current_player': current_player,
             'turn': turn,
             'players': [],
+            'wall_remaining': 0,  # 将在后面更新
         }
+        
+        try:
+            # 获取牌墙剩余数量
+            readable_state['wall_remaining'] = engine.remaining_tiles()
+        except Exception:
+            pass
         
         try:
             # 获取每个玩家的信息

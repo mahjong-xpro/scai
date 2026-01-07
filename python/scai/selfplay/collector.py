@@ -263,12 +263,26 @@ class DataCollector:
                     print(f"Warning: High invalid trajectory rate: {invalid_rate:.2%} ({invalid_trajectories}/{total_checked})")
                     print("Consider checking data collection logic or validation rules.")
             
-            # 更新奖励
+            # 更新奖励（在验证之后，因为验证检查的是原始奖励）
+            # 注意：update_rewards会在最后一步添加final_reward，但验证时检查的是原始step rewards
             rewards = self.reward_shaping.update_rewards(
                 trajectory['rewards'],
                 trajectory['final_score'],
                 is_winner=trajectory['final_score'] > 0,
             )
+            
+            # 调试信息：检查奖励是否真的都是0（仅前几个轨迹）
+            if traj_idx < 3 and len(trajectory['rewards']) > 0:
+                original_rewards = trajectory['rewards']
+                non_zero_count = sum(1 for r in original_rewards if abs(float(r)) > 1e-6)
+                if non_zero_count == 0:
+                    print(f"Debug: Trajectory {traj_idx}: All {len(original_rewards)} step rewards are zero")
+                    print(f"  First 5 rewards: {original_rewards[:5]}")
+                    print(f"  Final score: {trajectory.get('final_score', 0.0)}")
+                else:
+                    print(f"Debug: Trajectory {traj_idx}: {non_zero_count}/{len(original_rewards)} rewards are non-zero")
+                    non_zero_rewards = [r for r in original_rewards if abs(float(r)) > 1e-6]
+                    print(f"  Non-zero rewards (first 5): {non_zero_rewards[:5]}")
             
             # 添加到缓冲区
             for i in range(len(trajectory['states'])):
