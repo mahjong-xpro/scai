@@ -51,6 +51,7 @@ class SelfPlayWorker:
         use_feeding: bool = False,
         feeding_config: Optional[Any] = None,
         enable_win: bool = True,
+        reward_config: Optional[Dict] = None,
     ):
         """
         参数：
@@ -64,6 +65,7 @@ class SelfPlayWorker:
         - use_feeding: 是否使用喂牌模式（默认 False）
         - feeding_config: 喂牌配置（可选）
         - enable_win: 是否允许胡牌（默认 True，所有阶段都允许，通过奖励函数引导是否追求）
+        - reward_config: 奖励配置（可选，用于与主进程保持一致）
         """
         self.worker_id = worker_id
         self.num_games = num_games
@@ -79,8 +81,8 @@ class SelfPlayWorker:
         # 初始化 Rust 引擎
         self.engine = scai_engine.PyGameEngine()
         
-        # 初始化奖励函数
-        self.reward_shaping = RewardShaping()
+        # 初始化奖励函数（使用传入的 reward_config，确保与主进程一致）
+        self.reward_shaping = RewardShaping(reward_config=reward_config or {})
         
         # 初始化喂牌生成器（如果启用）
         if self.use_feeding and self.feeding_config:
@@ -639,6 +641,7 @@ def create_workers(
     use_feeding: bool = False,
     feeding_config: Optional[Any] = None,
     enable_win: bool = True,
+    reward_config: Optional[Dict] = None,
 ) -> List:
     """
     创建多个 Worker
@@ -680,6 +683,7 @@ def create_workers(
                     use_feeding=use_feeding,
                     feeding_config=feeding_config,
                     enable_win=enable_win,
+                    reward_config=reward_config,
                 )
                 workers.append(worker)
             except Exception as e:
@@ -696,6 +700,7 @@ def create_workers(
 def collect_trajectories_parallel(
     workers: List,
     model_state_dict: Dict,
+    reward_config: Optional[Dict] = None,
 ) -> List[Dict]:
     """
     并行收集轨迹

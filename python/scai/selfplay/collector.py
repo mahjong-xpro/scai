@@ -82,6 +82,8 @@ class DataCollector:
         - enable_win: 是否开启胡牌功能
         """
         if self.workers is None:
+            # 传递 reward_config 到 worker，确保奖励配置一致
+            reward_config = self.reward_shaping.reward_config if self.reward_shaping else {}
             self.workers = create_workers(
                 num_workers=self.num_workers,
                 num_games_per_worker=self.num_games_per_worker,
@@ -89,6 +91,7 @@ class DataCollector:
                 use_feeding=use_feeding,
                 feeding_config=self.feeding_config if self.use_feeding else None,
                 enable_win=enable_win,
+                reward_config=reward_config,
             )
     
     def enable_opponent_pool(
@@ -183,10 +186,12 @@ class DataCollector:
         logger = logging.getLogger(__name__)
         logger.info(f"Starting parallel trajectory collection with {len(self.workers)} workers...")
         
-        # 并行收集轨迹
+        # 并行收集轨迹（传递 reward_config，确保 worker 使用正确的奖励配置）
+        reward_config = self.reward_shaping.reward_config if self.reward_shaping else {}
         trajectories = collect_trajectories_parallel(
             self.workers,
             model_state_dict,
+            reward_config=reward_config,
         )
         
         logger.info(f"Collection complete: {len(trajectories)} trajectories collected")
