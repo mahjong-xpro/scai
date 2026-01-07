@@ -98,9 +98,15 @@ class SelfPlayWorker:
     
     def update_reward_config(self, reward_config: Dict):
         """更新奖励配置（用于curriculum学习阶段变化时）"""
-        self.reward_shaping.reward_config = reward_config or {}
+        old_config = self.reward_shaping.reward_config.copy() if self.reward_shaping.reward_config else {}
+        self.reward_shaping.reward_config = reward_config.copy() if reward_config else {}
+        # 调试信息：打印更新前后的配置
         if self.worker_id == 0:
-            print(f"Worker {self.worker_id}: Updated reward_config: {self.reward_shaping.reward_config}")
+            print(f"Worker {self.worker_id}: Updated reward_config")
+            print(f"  Old: {old_config}")
+            print(f"  New: {self.reward_shaping.reward_config}")
+            print(f"  lack_color_discard: {self.reward_shaping.reward_config.get('lack_color_discard', 'NOT_FOUND')}")
+            print(f"  raw_score_only: {self.reward_shaping.reward_config.get('raw_score_only', False)}")
     
     def play_game(
         self,
@@ -454,6 +460,9 @@ class SelfPlayWorker:
                     # 调试信息（仅在前几个游戏中打印）
                     if game_id < 3 and turn_count < 5 and lack_color_discard:
                         print(f"Worker {self.worker_id}, Game {game_id}, Turn {turn_count}: 计算后的奖励={reward}, lack_color_discard={lack_color_discard}")
+                        print(f"  reward_config={self.reward_shaping.reward_config}")
+                        print(f"  raw_score_only={self.reward_shaping.reward_config.get('raw_score_only', False)}")
+                        print(f"  lack_color_discard value={self.reward_shaping.reward_config.get('lack_color_discard', 'NOT_FOUND')}")
                     trajectory['rewards'].append(reward)
                 
             except Exception as e:

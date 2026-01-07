@@ -90,20 +90,42 @@ class RewardShaping:
         """
         reward = 0.0
         
+        # 调试信息：如果检测到缺门弃牌，打印reward_config（仅前几次）
+        if lack_color_discard:
+            if not hasattr(self, '_lack_reward_debug_count'):
+                self._lack_reward_debug_count = 0
+            if self._lack_reward_debug_count < 5:
+                print(f"[RewardShaping.compute_step_reward] lack_color_discard=True")
+                print(f"  reward_config={self.reward_config}")
+                print(f"  raw_score_only={self.reward_config.get('raw_score_only', False)}")
+                print(f"  lack_color_discard value={self.reward_config.get('lack_color_discard', 'NOT_FOUND')}")
+                self._lack_reward_debug_count += 1
+        
         # 如果使用阶段特定的奖励配置
         if self.reward_config.get('raw_score_only', False):
             # 阶段6：纯金币收益，不添加任何人工奖励
+            if lack_color_discard and not hasattr(self, '_raw_score_only_warned'):
+                print(f"[RewardShaping] WARNING: raw_score_only=True, returning 0.0 even though lack_color_discard=True")
+                self._raw_score_only_warned = True
             return 0.0
         
         # 定缺相关奖励（阶段1）
         if lack_color_discard:
             lack_reward = self.reward_config.get('lack_color_discard', 0.0)
+            reward_before = reward
             reward += lack_reward
-            # 调试信息（仅在reward_config为空时打印一次警告）
-            if lack_reward == 0.0 and not hasattr(self, '_lack_reward_warned'):
-                import warnings
-                warnings.warn(f"lack_color_discard detected but reward_config['lack_color_discard'] is 0.0 or missing. reward_config={self.reward_config}")
-                self._lack_reward_warned = True
+            # 调试信息：打印奖励计算过程（仅前几次）
+            if hasattr(self, '_lack_reward_debug_count') and self._lack_reward_debug_count <= 5:
+                print(f"  reward before adding lack_reward: {reward_before}")
+                print(f"  lack_reward={lack_reward}")
+                print(f"  reward after adding lack_reward: {reward}")
+            
+            # 如果检测到缺门弃牌但奖励为0，打印警告
+            if lack_reward == 0.0:
+                if not hasattr(self, '_lack_reward_warned'):
+                    import warnings
+                    warnings.warn(f"lack_color_discard detected but reward_config['lack_color_discard'] is 0.0 or missing. reward_config={self.reward_config}")
+                    self._lack_reward_warned = True
         
         if illegal_action_attempt:
             reward += self.reward_config.get('illegal_action_attempt', 0.0)
