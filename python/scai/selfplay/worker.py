@@ -367,6 +367,18 @@ class SelfPlayWorker:
                 action_index, state, current_player
             )
             
+            # 在执行动作前，获取玩家定缺的花色（用于检查缺门弃牌奖励）
+            declared_suit = None
+            try:
+                declared_suit = state.get_player_declared_suit(current_player)
+            except Exception:
+                pass  # 如果获取失败，忽略（可能还未定缺）
+            
+            # 检查是否打出了缺门牌
+            lack_color_discard = False
+            if action_type == "discard" and tile_index is not None and declared_suit is not None:
+                lack_color_discard = self._is_lack_color_tile(tile_index, declared_suit)
+            
             # 执行动作
             is_hu = False
             try:
@@ -413,6 +425,7 @@ class SelfPlayWorker:
                         is_ready=is_ready_after,
                         is_hu=is_hu,
                         is_flower_pig=is_flower_pig,
+                        lack_color_discard=lack_color_discard,
                     )
                     trajectory['rewards'].append(reward)
                     break
@@ -422,6 +435,7 @@ class SelfPlayWorker:
                         is_ready=is_ready_after,
                         is_hu=is_hu,
                         is_flower_pig=is_flower_pig,
+                        lack_color_discard=lack_color_discard,
                     )
                     trajectory['rewards'].append(reward)
                 
@@ -534,6 +548,45 @@ class SelfPlayWorker:
         
         # 如果解析失败，返回 0
         return 0.0
+    
+    def _is_lack_color_tile(
+        self,
+        tile_index: int,
+        declared_suit: str,
+    ) -> bool:
+        """
+        检查打出的牌是否是缺门牌（定缺花色）
+        
+        参数：
+        - tile_index: 牌索引（0-107）
+        - declared_suit: 定缺花色（"Wan", "Tong", "Tiao"）
+        
+        返回：
+        - 是否是缺门牌
+        """
+        if tile_index < 0 or tile_index >= 108:
+            return False
+        
+        # 根据 tile_index 计算花色索引
+        # tile_index 范围：0-107
+        # 0-35: Wan (suit_index=0)
+        # 36-71: Tong (suit_index=1)
+        # 72-107: Tiao (suit_index=2)
+        suit_index = tile_index // 36
+        
+        # 将定缺花色字符串映射到索引
+        suit_map = {
+            "Wan": 0,
+            "Tong": 1,
+            "Tiao": 2,
+        }
+        
+        declared_suit_index = suit_map.get(declared_suit)
+        if declared_suit_index is None:
+            return False
+        
+        # 如果打出的牌的花色索引等于定缺花色索引，说明打出了缺门牌
+        return suit_index == declared_suit_index
     
     def _check_flower_pig(
         self,
