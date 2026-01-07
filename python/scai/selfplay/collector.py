@@ -202,6 +202,9 @@ class DataCollector:
         valid_trajectories = 0
         invalid_trajectories = 0
         
+        # 用于保存到dashboard的游戏轨迹（选择有代表性的游戏）
+        games_to_replay = []
+        
         for traj_idx, trajectory in enumerate(trajectories):
             # 验证轨迹（如果启用）
             is_valid = True
@@ -267,6 +270,28 @@ class DataCollector:
             
             # 完成轨迹
             self.buffer.finish_trajectory()
+            
+            # 选择有代表性的游戏保存到dashboard（每10个游戏选1个，或者最终得分高的）
+            if is_valid and len(trajectory['states']) > 0:
+                final_score = trajectory.get('final_score', 0.0)
+                # 选择条件：1) 每10个游戏选1个，2) 最终得分>0的，3) 步骤数>10的（完整的游戏）
+                should_save = (
+                    (traj_idx % 10 == 0) or  # 每10个选1个
+                    (final_score > 0) or  # 有得分的游戏
+                    (len(trajectory['states']) > 50)  # 长游戏
+                ) and len(trajectory['states']) > 10  # 至少10步
+                
+                if should_save:
+                    games_to_replay.append({
+                        'game_id': traj_idx,
+                        'iteration': current_iteration,
+                        'trajectory': trajectory,
+                        'game_info': {
+                            'final_score': final_score,
+                            'num_steps': len(trajectory['states']),
+                            'is_winner': final_score > 0,
+                        },
+                    })
         
         # 计算优势函数
         self.buffer.compute_advantages()
@@ -311,6 +336,17 @@ class DataCollector:
                         print(f"  - {error_type}: {count} occurrences ({percentage:.1f}%)")
                 
                 print(f"{'='*60}\n")
+        
+        # 将选中的游戏轨迹保存到dashboard（如果可用）
+        if games_to_replay:
+            try:
+                from ..coach.dashboard import get_state_manager
+                state_manager = get_state_manager()
+                for game_data in games_to_replay:
+                    state_manager.add_game_replay(game_data)
+            except Exception as e:
+                # 如果dashboard不可用，静默失败（不影响训练）
+                pass
         
         return result
     

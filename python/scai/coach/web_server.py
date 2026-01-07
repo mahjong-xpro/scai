@@ -302,6 +302,44 @@ HTML_TEMPLATE = """
         </div>
         
         <div class="card">
+            <h2>🎮 牌局回放</h2>
+            <div style="margin-bottom: 16px;">
+                <button onclick="showReplayList()" id="replay-list-btn" style="padding: 8px 16px; background: #667eea; color: white; border: none; border-radius: 4px; cursor: pointer; margin-right: 8px;">
+                    查看回放列表
+                </button>
+                <button onclick="hideReplayList()" id="replay-close-btn" style="display: none; padding: 8px 16px; background: #999; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                    关闭
+                </button>
+            </div>
+            <div id="replay-list" style="display: none;">
+                <div class="loading">加载中...</div>
+            </div>
+            <div id="replay-viewer" style="display: none;">
+                <div style="margin-bottom: 16px;">
+                    <button onclick="hideReplayViewer()" style="padding: 8px 16px; background: #999; color: white; border: none; border-radius: 4px; cursor: pointer; margin-right: 8px;">
+                        ← 返回列表
+                    </button>
+                    <span id="replay-game-info" style="font-weight: bold; color: #667eea;"></span>
+                </div>
+                <div id="replay-controls" style="margin-bottom: 16px; display: flex; gap: 8px; align-items: center;">
+                    <button onclick="replayStep(-1)" style="padding: 8px 16px; background: #667eea; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                        ⏮ 上一步
+                    </button>
+                    <button onclick="replayToggle()" id="replay-play-btn" style="padding: 8px 16px; background: #43e97b; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                        ▶ 播放
+                    </button>
+                    <button onclick="replayStep(1)" style="padding: 8px 16px; background: #667eea; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                        下一步 ⏭
+                    </button>
+                    <span id="replay-step-info" style="margin-left: 16px; color: #666;">步骤: 0 / 0</span>
+                </div>
+                <div id="replay-content" style="background: #f5f5f5; padding: 16px; border-radius: 8px; min-height: 200px;">
+                    <div class="loading">加载中...</div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card">
             <div class="timestamp" id="timestamp">最后更新: -</div>
         </div>
     </div>
@@ -731,6 +769,229 @@ HTML_TEMPLATE = """
             }
         }
         
+        // 回放相关变量
+        let currentReplay = null;
+        let currentReplayStep = 0;
+        let replayInterval = null;
+        let isReplayPlaying = false;
+        
+        // 显示回放列表
+        async function showReplayList() {
+            const listDiv = document.getElementById('replay-list');
+            const viewerDiv = document.getElementById('replay-viewer');
+            const listBtn = document.getElementById('replay-list-btn');
+            const closeBtn = document.getElementById('replay-close-btn');
+            
+            listDiv.style.display = 'block';
+            viewerDiv.style.display = 'none';
+            listBtn.style.display = 'none';
+            closeBtn.style.display = 'inline-block';
+            
+            try {
+                const response = await fetch('/api/replays?limit=20');
+                const data = await response.json();
+                
+                if (data.replays && data.replays.length > 0) {
+                    listDiv.innerHTML = `
+                        <div style="margin-bottom: 16px; color: #666;">
+                            共 ${data.count} 局游戏（显示最近 20 局）
+                        </div>
+                        <div style="display: grid; gap: 12px;">
+                            ${data.replays.map(replay => `
+                                <div onclick="loadReplay(${replay.game_id})" style="background: white; padding: 16px; border-radius: 8px; cursor: pointer; border: 2px solid #e0e0e0; transition: all 0.2s;" 
+                                     onmouseover="this.style.borderColor='#667eea'; this.style.transform='translateY(-2px)'" 
+                                     onmouseout="this.style.borderColor='#e0e0e0'; this.style.transform='translateY(0)'">
+                                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                                        <div>
+                                            <div style="font-weight: bold; color: #667eea; margin-bottom: 4px;">
+                                                游戏 #${replay.game_id} (迭代 ${replay.iteration || 'N/A'})
+                                            </div>
+                                            <div style="color: #666; font-size: 14px;">
+                                                步骤数: ${replay.num_steps} | 
+                                                ${replay.game_info.final_score !== undefined ? `最终得分: ${replay.game_info.final_score}` : ''}
+                                            </div>
+                                        </div>
+                                        <div style="color: #999; font-size: 12px;">
+                                            ${new Date(replay.timestamp).toLocaleString('zh-CN')}
+                                        </div>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    `;
+                } else {
+                    listDiv.innerHTML = '<div style="text-align: center; color: #666; padding: 40px;">暂无回放数据</div>';
+                }
+            } catch (e) {
+                console.error('Error loading replays:', e);
+                listDiv.innerHTML = '<div style="text-align: center; color: #c62828; padding: 40px;">加载失败</div>';
+            }
+        }
+        
+        // 隐藏回放列表
+        function hideReplayList() {
+            const listDiv = document.getElementById('replay-list');
+            const listBtn = document.getElementById('replay-list-btn');
+            const closeBtn = document.getElementById('replay-close-btn');
+            
+            listDiv.style.display = 'none';
+            listBtn.style.display = 'inline-block';
+            closeBtn.style.display = 'none';
+        }
+        
+        // 加载单个回放
+        async function loadReplay(gameId) {
+            const listDiv = document.getElementById('replay-list');
+            const viewerDiv = document.getElementById('replay-viewer');
+            const contentDiv = document.getElementById('replay-content');
+            const infoSpan = document.getElementById('replay-game-info');
+            
+            listDiv.style.display = 'none';
+            viewerDiv.style.display = 'block';
+            
+            try {
+                const response = await fetch(`/api/replays/${gameId}`);
+                const replay = await response.json();
+                
+                currentReplay = replay;
+                currentReplayStep = 0;
+                isReplayPlaying = false;
+                
+                // 更新游戏信息
+                infoSpan.textContent = `游戏 #${replay.game_id} (迭代 ${replay.iteration || 'N/A'})`;
+                
+                // 渲染第一步
+                renderReplayStep(0);
+            } catch (e) {
+                console.error('Error loading replay:', e);
+                contentDiv.innerHTML = '<div style="text-align: center; color: #c62828; padding: 40px;">加载失败</div>';
+            }
+        }
+        
+        // 隐藏回放查看器
+        function hideReplayViewer() {
+            const viewerDiv = document.getElementById('replay-viewer');
+            viewerDiv.style.display = 'none';
+            if (replayInterval) {
+                clearInterval(replayInterval);
+                replayInterval = null;
+                isReplayPlaying = false;
+            }
+        }
+        
+        // 渲染回放步骤
+        function renderReplayStep(step) {
+            if (!currentReplay || !currentReplay.trajectory) {
+                return;
+            }
+            
+            const trajectory = currentReplay.trajectory;
+            const states = trajectory.states || [];
+            const actions = trajectory.actions || [];
+            const rewards = trajectory.rewards || [];
+            
+            if (step < 0 || step >= states.length) {
+                return;
+            }
+            
+            currentReplayStep = step;
+            
+            // 更新步骤信息
+            document.getElementById('replay-step-info').textContent = `步骤: ${step + 1} / ${states.length}`;
+            
+            // 渲染当前步骤
+            const contentDiv = document.getElementById('replay-content');
+            const state = states[step];
+            const action = actions[step];
+            const reward = rewards[step];
+            
+            // 简化显示（实际可以根据需要扩展）
+            contentDiv.innerHTML = `
+                <div style="background: white; padding: 16px; border-radius: 8px;">
+                    <h3 style="color: #667eea; margin-bottom: 12px;">步骤 ${step + 1}</h3>
+                    <div style="margin-bottom: 8px;">
+                        <strong>动作:</strong> ${formatAction(action)}
+                    </div>
+                    <div style="margin-bottom: 8px;">
+                        <strong>奖励:</strong> <span style="color: ${reward >= 0 ? '#43e97b' : '#ff6b6b'}">${reward.toFixed(3)}</span>
+                    </div>
+                    <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid #e0e0e0;">
+                        <div style="color: #666; font-size: 14px;">
+                            <strong>状态信息:</strong> 状态张量形状 ${state ? JSON.stringify(state.shape || 'N/A') : 'N/A'}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+        
+        // 格式化动作
+        function formatAction(actionIndex) {
+            if (actionIndex < 108) {
+                return `出牌 (索引: ${actionIndex})`;
+            } else if (actionIndex < 216) {
+                return `碰 (索引: ${actionIndex - 108})`;
+            } else if (actionIndex < 324) {
+                return `杠 (索引: ${actionIndex - 216})`;
+            } else if (actionIndex < 432) {
+                return `胡 (索引: ${actionIndex - 324})`;
+            } else if (actionIndex === 432) {
+                return '过';
+            } else if (actionIndex === 433) {
+                return '摸牌';
+            }
+            return `未知动作 (${actionIndex})`;
+        }
+        
+        // 回放步骤控制
+        function replayStep(delta) {
+            if (!currentReplay || !currentReplay.trajectory) {
+                return;
+            }
+            
+            const newStep = currentReplayStep + delta;
+            const maxStep = (currentReplay.trajectory.states || []).length - 1;
+            
+            if (newStep >= 0 && newStep <= maxStep) {
+                renderReplayStep(newStep);
+            }
+        }
+        
+        // 播放/暂停回放
+        function replayToggle() {
+            if (!currentReplay || !currentReplay.trajectory) {
+                return;
+            }
+            
+            const maxStep = (currentReplay.trajectory.states || []).length - 1;
+            
+            if (isReplayPlaying) {
+                // 暂停
+                if (replayInterval) {
+                    clearInterval(replayInterval);
+                    replayInterval = null;
+                }
+                isReplayPlaying = false;
+                document.getElementById('replay-play-btn').textContent = '▶ 播放';
+                document.getElementById('replay-play-btn').style.background = '#43e97b';
+            } else {
+                // 播放
+                if (currentReplayStep >= maxStep) {
+                    currentReplayStep = 0; // 从头开始
+                }
+                isReplayPlaying = true;
+                document.getElementById('replay-play-btn').textContent = '⏸ 暂停';
+                document.getElementById('replay-play-btn').style.background = '#ff6b6b';
+                
+                replayInterval = setInterval(() => {
+                    if (currentReplayStep < maxStep) {
+                        replayStep(1);
+                    } else {
+                        replayToggle(); // 播放完毕，自动暂停
+                    }
+                }, 1000); // 每秒一步
+            }
+        }
+        
         // 初始化
         connectSSE();
         
@@ -801,6 +1062,51 @@ def get_history_summary():
     state_manager = get_state_manager()
     summary = state_manager.get_history_summary()
     return jsonify(summary)
+
+
+@app.route('/api/replays')
+def get_replays():
+    """获取游戏回放列表"""
+    from flask import request
+    state_manager = get_state_manager()
+    
+    # 获取查询参数
+    limit = request.args.get('limit', type=int)
+    iteration = request.args.get('iteration', type=int)
+    
+    replays = state_manager.get_game_replays(
+        limit=limit,
+        iteration=iteration,
+    )
+    
+    # 简化返回数据（不包含完整的轨迹，只包含元信息）
+    simplified_replays = []
+    for replay in replays:
+        simplified = {
+            'game_id': replay.get('game_id'),
+            'iteration': replay.get('iteration'),
+            'timestamp': replay.get('timestamp'),
+            'game_info': replay.get('game_info', {}),
+            'num_steps': len(replay.get('trajectory', {}).get('states', [])) if 'trajectory' in replay else 0,
+        }
+        simplified_replays.append(simplified)
+    
+    return jsonify({
+        'replays': simplified_replays,
+        'count': len(simplified_replays),
+    })
+
+
+@app.route('/api/replays/<int:game_id>')
+def get_replay(game_id: int):
+    """获取单个游戏回放"""
+    state_manager = get_state_manager()
+    replay = state_manager.get_game_replay(game_id)
+    
+    if replay is None:
+        return jsonify({'error': 'Game not found'}), 404
+    
+    return jsonify(replay)
 
 
 @app.route('/api/stream')

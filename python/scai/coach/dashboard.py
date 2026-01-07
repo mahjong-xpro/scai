@@ -45,9 +45,10 @@ class DashboardStateManager:
     
     线程安全的状态管理器，用于存储和更新训练状态。
     支持历史记录存储，方便查看趋势。
+    支持游戏轨迹存储，用于牌局回放。
     """
     
-    def __init__(self, max_history: int = 1000):
+    def __init__(self, max_history: int = 1000, max_games: int = 50):
         self._lock = threading.Lock()
         self._status = TrainingStatus()
         self._update_queue = queue.Queue()
@@ -55,6 +56,9 @@ class DashboardStateManager:
         # 历史记录：存储每次更新的状态快照
         self._history: List[Dict[str, Any]] = []
         self._max_history = max_history  # 最多保存1000条历史记录
+        # 游戏轨迹：存储最近完成的游戏，用于回放
+        self._game_replays: List[Dict[str, Any]] = []
+        self._max_games = max_games  # 最多保存50局游戏
     
     def update_status(
         self,
@@ -191,6 +195,73 @@ class DashboardStateManager:
             'last_iteration': last.get('current_iteration', 0),
             'time_span_seconds': time_span,
         }
+    
+    def add_game_replay(self, game_data: Dict[str, Any]):
+        """添加游戏轨迹用于回放
+        
+        参数：
+        - game_data: 游戏数据字典，包含：
+            - game_id: 游戏ID
+            - iteration: 训练迭代次数
+            - trajectory: 游戏轨迹（states, actions, rewards等）
+            - game_info: 游戏信息（定缺、胡牌类型、最终得分等）
+            - timestamp: 时间戳
+        """
+        with self._lock:
+            # 添加时间戳（如果没有）
+            if 'timestamp' not in game_data:
+                game_data['timestamp'] = datetime.now().isoformat()
+            
+            self._game_replays.append(game_data.copy())
+            
+            # 限制游戏数量
+            if len(self._game_replays) > self._max_games:
+                self._game_replays = self._game_replays[-self._max_games:]
+    
+    def get_game_replays(
+        self,
+        limit: Optional[int] = None,
+        iteration: Optional[int] = None,
+    ) -> List[Dict[str, Any]]:
+        """获取游戏轨迹列表
+        
+        参数：
+        - limit: 最多返回的游戏数（默认返回全部）
+        - iteration: 筛选特定迭代次数的游戏（可选）
+        
+        返回：
+        - 游戏轨迹列表，按时间倒序排列（最新的在前）
+        """
+        with self._lock:
+            replays = self._game_replays.copy()
+        
+        # 按迭代次数过滤
+        if iteration is not None:
+            replays = [r for r in replays if r.get('iteration') == iteration]
+        
+        # 限制数量
+        if limit is not None:
+            replays = replays[-limit:]
+        
+        # 倒序排列（最新的在前）
+        replays.reverse()
+        
+        return replays
+    
+    def get_game_replay(self, game_id: int) -> Optional[Dict[str, Any]]:
+        """获取单个游戏轨迹
+        
+        参数：
+        - game_id: 游戏ID
+        
+        返回：
+        - 游戏轨迹字典，如果不存在则返回None
+        """
+        with self._lock:
+            for replay in self._game_replays:
+                if replay.get('game_id') == game_id:
+                    return replay.copy()
+        return None
 
 
 # 全局状态管理器实例
