@@ -44,13 +44,17 @@ class DashboardStateManager:
     """仪表板状态管理器
     
     线程安全的状态管理器，用于存储和更新训练状态。
+    支持历史记录存储，方便查看趋势。
     """
     
-    def __init__(self):
+    def __init__(self, max_history: int = 1000):
         self._lock = threading.Lock()
         self._status = TrainingStatus()
         self._update_queue = queue.Queue()
         self._subscribers: List[queue.Queue] = []
+        # 历史记录：存储每次更新的状态快照
+        self._history: List[Dict[str, Any]] = []
+        self._max_history = max_history  # 最多保存1000条历史记录
     
     def update_status(
         self,
@@ -84,8 +88,15 @@ class DashboardStateManager:
             
             self._status.timestamp = datetime.now().isoformat()
             
-            # 通知所有订阅者
+            # 保存历史记录
             status_dict = asdict(self._status)
+            self._history.append(status_dict.copy())
+            
+            # 限制历史记录数量
+            if len(self._history) > self._max_history:
+                self._history = self._history[-self._max_history:]
+            
+            # 通知所有订阅者
             for subscriber in self._subscribers:
                 try:
                     subscriber.put_nowait(status_dict)
@@ -115,6 +126,71 @@ class DashboardStateManager:
         with self._lock:
             if subscriber_queue in self._subscribers:
                 self._subscribers.remove(subscriber_queue)
+    
+    def get_history(
+        self,
+        limit: Optional[int] = None,
+        start_iteration: Optional[int] = None,
+        end_iteration: Optional[int] = None,
+    ) -> List[Dict[str, Any]]:
+        """获取历史记录
+        
+        参数：
+        - limit: 最多返回的记录数（默认返回全部）
+        - start_iteration: 起始迭代次数（可选）
+        - end_iteration: 结束迭代次数（可选）
+        
+        返回：
+        - 历史记录列表，按时间顺序排列
+        """
+        with self._lock:
+            history = self._history.copy()
+        
+        # 按迭代次数过滤
+        if start_iteration is not None:
+            history = [h for h in history if h.get('current_iteration', 0) >= start_iteration]
+        if end_iteration is not None:
+            history = [h for h in history if h.get('current_iteration', 0) <= end_iteration]
+        
+        # 限制数量
+        if limit is not None:
+            history = history[-limit:]
+        
+        return history
+    
+    def get_history_summary(self) -> Dict[str, Any]:
+        """获取历史记录摘要
+        
+        返回：
+        - 包含历史记录统计信息的字典
+        """
+        with self._lock:
+            history = self._history.copy()
+        
+        if not history:
+            return {
+                'total_records': 0,
+                'first_iteration': 0,
+                'last_iteration': 0,
+                'time_span': None,
+            }
+        
+        first = history[0]
+        last = history[-1]
+        
+        try:
+            first_time = datetime.fromisoformat(first.get('timestamp', ''))
+            last_time = datetime.fromisoformat(last.get('timestamp', ''))
+            time_span = (last_time - first_time).total_seconds()
+        except:
+            time_span = None
+        
+        return {
+            'total_records': len(history),
+            'first_iteration': first.get('current_iteration', 0),
+            'last_iteration': last.get('current_iteration', 0),
+            'time_span_seconds': time_span,
+        }
 
 
 # 全局状态管理器实例

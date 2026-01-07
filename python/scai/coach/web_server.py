@@ -279,8 +279,16 @@ HTML_TEMPLATE = """
             
             <div class="card">
                 <h2>🎁 奖励配置</h2>
+                <div style="margin-bottom: 16px;">
+                    <button onclick="toggleRewardHistory()" id="reward-history-btn" style="padding: 8px 16px; background: #667eea; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                        查看历史变化
+                    </button>
+                </div>
                 <div id="reward-config" class="reward-config">
                     <div class="loading">加载中...</div>
+                </div>
+                <div id="reward-history" style="display: none; margin-top: 20px;">
+                    <canvas id="reward-chart" style="max-height: 400px;"></canvas>
                 </div>
             </div>
         </div>
@@ -447,6 +455,37 @@ def get_status():
     state_manager = get_state_manager()
     status = state_manager.get_status()
     return jsonify(status)
+
+
+@app.route('/api/history')
+def get_history():
+    """获取历史记录（REST API）"""
+    from flask import request
+    state_manager = get_state_manager()
+    
+    # 获取查询参数
+    limit = request.args.get('limit', type=int)
+    start_iteration = request.args.get('start_iteration', type=int)
+    end_iteration = request.args.get('end_iteration', type=int)
+    
+    history = state_manager.get_history(
+        limit=limit,
+        start_iteration=start_iteration,
+        end_iteration=end_iteration,
+    )
+    
+    return jsonify({
+        'history': history,
+        'count': len(history),
+    })
+
+
+@app.route('/api/history/summary')
+def get_history_summary():
+    """获取历史记录摘要"""
+    state_manager = get_state_manager()
+    summary = state_manager.get_history_summary()
+    return jsonify(summary)
 
 
 @app.route('/api/stream')
