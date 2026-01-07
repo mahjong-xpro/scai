@@ -152,27 +152,52 @@ def setup_gpu_config(config: Dict, logger) -> Tuple[str, int]:
         return 'cpu', 0
 
     device_ids = gpu_config.get('device_ids', [])
+    
+    # 首先检查 CUDA 是否可用（在设置 CUDA_VISIBLE_DEVICES 之前）
+    if not torch.cuda.is_available():
+        logger.warning("CUDA not available, falling back to CPU.")
+        os.environ["CUDA_VISIBLE_DEVICES"] = ""
+        return 'cpu', 0
+    
+    # 获取系统实际可用的 GPU 数量
+    total_gpus = torch.cuda.device_count()
+    logger.info(f"System has {total_gpus} GPU(s) available")
+    
     if not device_ids:
         logger.info("GPU enabled but no specific device_ids provided. Using all available GPUs.")
-        if torch.cuda.is_available():
-            num_gpus = torch.cuda.device_count()
-            device_ids = list(range(num_gpus))
-        else:
-            logger.warning("CUDA not available, falling back to CPU.")
-            os.environ["CUDA_VISIBLE_DEVICES"] = ""
-            return 'cpu', 0
+        device_ids = list(range(total_gpus))
+    else:
+        # 验证指定的 GPU ID 是否存在
+        invalid_ids = [gpu_id for gpu_id in device_ids if gpu_id >= total_gpus or gpu_id < 0]
+        if invalid_ids:
+            logger.warning(f"Invalid GPU device IDs specified: {invalid_ids}")
+            logger.warning(f"System only has {total_gpus} GPU(s) (IDs: 0-{total_gpus-1})")
+            logger.warning("Falling back to using all available GPUs or CPU.")
+            # 过滤掉无效的 GPU ID
+            device_ids = [gpu_id for gpu_id in device_ids if 0 <= gpu_id < total_gpus]
+            if not device_ids:
+                logger.warning("No valid GPU IDs after filtering. Falling back to CPU.")
+                os.environ["CUDA_VISIBLE_DEVICES"] = ""
+                return 'cpu', 0
     
     # 设置 CUDA_VISIBLE_DEVICES
     os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(map(str, device_ids))
     logger.info(f"Using GPUs: {device_ids} (CUDA_VISIBLE_DEVICES={os.environ['CUDA_VISIBLE_DEVICES']})")
 
-    if torch.cuda.is_available():
-        # PyTorch 此时只能看到被 CUDA_VISIBLE_DEVICES 限制的 GPU
+    # 重新检查 CUDA 是否可用（在设置 CUDA_VISIBLE_DEVICES 之后）
+    # 注意：设置 CUDA_VISIBLE_DEVICES 后，PyTorch 需要重新初始化才能看到变化
+    # 但这里我们只是检查，实际的设备会在模型创建时使用
+    try:
+        # 尝试获取设备数量（可能会触发 CUDA 初始化）
         num_visible_gpus = torch.cuda.device_count()
         logger.info(f"PyTorch will see {num_visible_gpus} GPU(s) as cuda:0 to cuda:{num_visible_gpus-1}")
+        if num_visible_gpus == 0:
+            logger.warning("No GPUs visible to PyTorch after setting CUDA_VISIBLE_DEVICES. Falling back to CPU.")
+            return 'cpu', 0
         return 'cuda', num_visible_gpus
-    else:
-        logger.warning("CUDA not available after setting CUDA_VISIBLE_DEVICES, falling back to CPU.")
+    except Exception as e:
+        logger.warning(f"Error checking CUDA devices: {e}")
+        logger.warning("Falling back to CPU.")
         return 'cpu', 0
 
 
