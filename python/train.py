@@ -722,6 +722,28 @@ def main():
                 if buffer.is_ready(min_size=training_config.get('batch_size', 4096)):
                     logger.info("Training model...")
                     
+                    # 检查模型和设备状态
+                    if device.startswith('cuda') and torch.cuda.is_available():
+                        # 检查模型是否在 GPU 上
+                        model_device = next(model.parameters()).device
+                        if model_device.type != 'cuda':
+                            logger.warning(f"Model is on {model_device}, but device is {device}. Moving model to {device}...")
+                            model = model.to(device)
+                            trainer.model = model  # 更新 trainer 中的模型引用
+                        
+                        # 从 device 字符串中提取 device_id（例如 'cuda:0' -> 0）
+                        try:
+                            if ':' in device:
+                                device_id = int(device.split(':')[1])
+                            else:
+                                device_id = 0
+                            # 记录 GPU 使用情况
+                            gpu_memory_allocated = torch.cuda.memory_allocated(device_id) / 1024**3  # GB
+                            gpu_memory_reserved = torch.cuda.memory_reserved(device_id) / 1024**3  # GB
+                            logger.info(f"GPU memory: allocated={gpu_memory_allocated:.2f}GB, reserved={gpu_memory_reserved:.2f}GB")
+                        except Exception as e:
+                            logger.warning(f"Failed to get GPU memory info: {e}")
+                    
                     # 根据课程学习调整训练参数（如果启用）
                     train_batch_size = training_config.get('batch_size', 4096)
                     train_num_epochs = training_config.get('num_epochs', 10)

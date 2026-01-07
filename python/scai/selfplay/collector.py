@@ -282,27 +282,28 @@ class DataCollector:
                 'num_errors': len(validation_stats['errors']),
                 'num_warnings': len(validation_stats['warnings']),
             }
-            # 如果有错误，打印最常见的错误类型
-            if validation_stats.get('top_errors') and len(validation_stats['top_errors']) > 0:
+            # 如果有错误或警告，打印统计信息
+            if (validation_stats.get('top_errors') and len(validation_stats['top_errors']) > 0) or \
+               (validation_stats.get('top_warnings') and len(validation_stats['top_warnings']) > 0):
                 print(f"\n{'='*60}")
-                print(f"Validation Error Summary:")
-                print(f"  Total errors: {len(validation_stats['errors'])}")
+                print(f"Validation Summary:")
                 print(f"  Valid trajectories: {validation_stats['valid_trajectories']}")
                 print(f"  Invalid trajectories: {validation_stats['invalid_trajectories']}")
                 print(f"  Valid rate: {validation_stats['valid_rate']:.2%}")
-                print(f"\nTop 5 most common error types:")
-                for error_type, count in validation_stats['top_errors']:
-                    percentage = (count / len(validation_stats['errors'])) * 100 if validation_stats['errors'] else 0
-                    print(f"  - {error_type}: {count} occurrences ({percentage:.1f}%)")
                 
-                # 显示一些示例错误消息（前3个不同的错误）
-                if validation_stats['errors']:
-                    print(f"\nSample error messages (first 3 unique):")
-                    seen_errors = set()
-                    for error in validation_stats['errors']:
-                        if error not in seen_errors and len(seen_errors) < 3:
-                            print(f"  - {error}")
-                            seen_errors.add(error)
+                # 显示最常见的警告类型（如果有）
+                if validation_stats.get('top_warnings') and len(validation_stats['top_warnings']) > 0:
+                    print(f"\nTop 5 most common warning types (total: {len(validation_stats['warnings'])}):")
+                    for warning_type, count in validation_stats['top_warnings']:
+                        percentage = (count / len(validation_stats['warnings'])) * 100 if validation_stats['warnings'] else 0
+                        print(f"  - {warning_type}: {count} occurrences ({percentage:.1f}%)")
+                
+                # 显示最常见的错误类型（如果有）
+                if validation_stats.get('top_errors') and len(validation_stats['top_errors']) > 0:
+                    print(f"\nTop 5 most common error types (total: {len(validation_stats['errors'])}):")
+                    for error_type, count in validation_stats['top_errors']:
+                        percentage = (count / len(validation_stats['errors'])) * 100 if validation_stats['errors'] else 0
+                        print(f"  - {error_type}: {count} occurrences ({percentage:.1f}%)")
                 
                 print(f"{'='*60}\n")
         

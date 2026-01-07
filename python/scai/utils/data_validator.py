@@ -340,16 +340,16 @@ class DataValidator:
         # 检查 done 标志
         dones = trajectory['dones']
         if not any(dones):
-            warnings.warn(f"Trajectory {trajectory_id}: No done flag is True (trajectory may be incomplete)")
+            self.validation_stats['warnings'].append(f"Trajectory {trajectory_id}: No done flag is True (trajectory may be incomplete)")
         
         # 检查最后一个时间步是否有 done 标志
         if not dones[-1]:
-            warnings.warn(f"Trajectory {trajectory_id}: Last step is not marked as done")
+            self.validation_stats['warnings'].append(f"Trajectory {trajectory_id}: Last step is not marked as done")
         
-        # 检查奖励序列的合理性
+        # 检查奖励序列的合理性（只记录到统计信息，不输出警告）
         rewards = trajectory['rewards']
         if all(r == 0 for r in rewards):
-            warnings.warn(f"Trajectory {trajectory_id}: All rewards are zero")
+            self.validation_stats['warnings'].append(f"Trajectory {trajectory_id}: All rewards are zero")
         
         # 检查价值估计的合理性（应该与奖励相关）
         values = trajectory['values']
@@ -406,8 +406,28 @@ class DataValidator:
             
             error_types[error_type] = error_types.get(error_type, 0) + 1
         
+        # 统计最常见的警告类型（不显示每个轨迹的详细信息）
+        warning_types = {}
+        for warning in self.validation_stats['warnings']:
+            # 提取警告类型（跳过 "Trajectory X: " 前缀）
+            if ':' in warning:
+                parts = warning.split(':', 1)
+                if len(parts) == 2:
+                    warning_type = parts[1].strip()[:50]
+                else:
+                    warning_type = warning[:50]
+            else:
+                warning_type = warning[:50]
+            
+            if not warning_type:
+                warning_type = warning[:50]
+            
+            warning_types[warning_type] = warning_types.get(warning_type, 0) + 1
+        
         # 获取最常见的5个错误类型
         top_errors = sorted(error_types.items(), key=lambda x: x[1], reverse=True)[:5]
+        # 获取最常见的5个警告类型
+        top_warnings = sorted(warning_types.items(), key=lambda x: x[1], reverse=True)[:5]
         
         return {
             **self.validation_stats,
@@ -417,6 +437,7 @@ class DataValidator:
                 else 0.0
             ),
             'top_errors': top_errors,  # 添加最常见的错误类型
+            'top_warnings': top_warnings,  # 添加最常见的警告类型
         }
     
     def reset_stats(self):
