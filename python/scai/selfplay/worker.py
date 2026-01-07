@@ -176,6 +176,12 @@ class SelfPlayWorker:
             'readable_states': [],
         }
         
+        # 检查奖励配置（用于诊断）
+        if not self.reward_shaping.reward_config:
+            if self.worker_id == 0 and game_id == 0:
+                print(f"Worker {self.worker_id}, Game {game_id}: WARNING - reward_config is empty! "
+                      f"This may cause all rewards to be zero.")
+        
         # 定缺阶段：所有玩家必须定缺
         for player_id in range(4):
             try:
@@ -224,6 +230,26 @@ class SelfPlayWorker:
         max_turns = 200
         turn_count = 0
         
+        # 在游戏主循环开始前，检查游戏状态
+        try:
+            if engine.is_game_over():
+                if self.worker_id == 0 and game_id == 0:
+                    print(f"Worker {self.worker_id}, Game {game_id}: Game already over before main loop")
+                return {
+                    'states': [], 'actions': [], 'rewards': [], 'values': [],
+                    'log_probs': [], 'dones': [], 'action_masks': [], 'final_score': 0.0,
+                }
+            if engine.remaining_tiles() == 0:
+                if self.worker_id == 0 and game_id == 0:
+                    print(f"Worker {self.worker_id}, Game {game_id}: No tiles before main loop")
+                return {
+                    'states': [], 'actions': [], 'rewards': [], 'values': [],
+                    'log_probs': [], 'dones': [], 'action_masks': [], 'final_score': 0.0,
+                }
+        except Exception as e:
+            if self.worker_id == 0 and game_id == 0:
+                print(f"Worker {self.worker_id}, Game {game_id}: Failed to check game state before main loop: {e}")
+        
         # 记录每个玩家在每个回合的弃牌（用于回放）
         # 格式: {player_id: {turn: [tile_index, ...]}}
         player_discards_by_turn = {0: {}, 1: {}, 2: {}, 3: {}}
@@ -260,12 +286,28 @@ class SelfPlayWorker:
                 # 检查游戏是否结束（3家离场或流局）
                 if engine.is_game_over():
                     break
-                # 否则继续循环，依赖引擎的current_player自动切换
-                # 或者手动查找下一个未离场玩家（如果引擎不自动切换）
-                # 注意：这里假设引擎会在某个时刻自动切换current_player
-                # 如果引擎不自动切换，可能会导致无限循环
-                # 但根据Rust代码，run()方法会自动处理，而我们使用的是process_action
-                # 所以需要依赖引擎的某种机制来切换玩家
+                # 手动查找下一个未离场玩家并切换
+                # 注意：Python绑定中没有next_turn()方法，需要手动处理
+                active_players = [i for i in range(4) if not state.is_player_out(i)]
+                if len(active_players) == 0:
+                    # 没有活跃玩家，游戏应该结束
+                    break
+                # 找到下一个活跃玩家（从current_player的下一个开始）
+                next_player = None
+                for i in range(1, 5):  # 检查current_player+1到current_player+4
+                    candidate = (current_player + i) % 4
+                    if candidate in active_players:
+                        next_player = candidate
+                        break
+                if next_player is not None:
+                    # 手动切换当前玩家（通过设置state的current_player）
+                    try:
+                        state.set_current_player(next_player)
+                    except Exception:
+                        # 如果设置失败，尝试通过执行一个空动作来触发切换
+                        # 或者依赖引擎自动处理
+                        pass
+                # 继续循环，让下一个玩家执行动作
                 continue
             
             # 先摸牌（如果是自己的回合）
@@ -597,9 +639,23 @@ class SelfPlayWorker:
                     trajectory['rewards'].append(reward)
                 
             except Exception as e:
+                error_msg = str(e)
                 print(f"Worker {self.worker_id}, Game {game_id}, Turn {turn_count} error: {e}")
+                # 记录详细信息用于诊断
+                try:
+                    remaining = engine.remaining_tiles()
+                    is_over = engine.is_game_over()
+                    print(f"  Action: {action_type}, tile_index: {tile_index}, current_player: {current_player}")
+                    print(f"  Remaining tiles: {remaining}, Game over: {is_over}")
+                except:
+                    pass
+                
                 # 如果动作失败，添加默认奖励并跳过这个回合
                 trajectory['rewards'].append(0.0)
+                
+                # 如果是严重错误（如游戏结束），应该退出而不是继续
+                if 'GameOver' in error_msg or 'WallEmpty' in error_msg:
+                    break
                 continue
         
         # 如果游戏正常结束，设置最后一个时间步的 done 标志
@@ -649,6 +705,12 @@ class SelfPlayWorker:
             missing = len(trajectory['states']) - len(trajectory['rewards'])
             print(f"Worker {self.worker_id}, Game {game_id}: Warning: {missing} rewards missing, padding with 0.0")
             trajectory['rewards'].extend([0.0] * missing)
+            # 检查补齐后是否所有奖励都是0
+            if len(trajectory['rewards']) > 0:
+                all_zero = all(abs(float(r)) < 1e-6 for r in trajectory['rewards'])
+                if all_zero and self.worker_id == 0 and game_id < 3:
+                    print(f"Worker {self.worker_id}, Game {game_id}: WARNING - All {len(trajectory['rewards'])} rewards are zero after padding. "
+                          f"Reward config: {self.reward_shaping.reward_config}")
         elif len(trajectory['rewards']) > len(trajectory['states']):
             # 不应该发生，但需要处理
             extra = len(trajectory['rewards']) - len(trajectory['states'])
