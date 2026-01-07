@@ -187,7 +187,18 @@ class DataCollector:
         logger.info(f"Starting parallel trajectory collection with {len(self.workers)} workers...")
         
         # 并行收集轨迹（传递 reward_config，确保 worker 使用正确的奖励配置）
+        # 重要：每次都从reward_shaping获取最新的reward_config，因为curriculum阶段可能已经变化
         reward_config = self.reward_shaping.reward_config if self.reward_shaping else {}
+        
+        # 调试信息：打印reward_config（仅第一次收集时打印）
+        if not hasattr(self, '_reward_config_logged'):
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info(f"DataCollector: Using reward_config: {reward_config}")
+            if not reward_config:
+                logger.warning("DataCollector: reward_config is empty! This may cause all rewards to be zero.")
+            self._reward_config_logged = True
+        
         trajectories = collect_trajectories_parallel(
             self.workers,
             model_state_dict,

@@ -97,7 +97,13 @@ class RewardShaping:
         
         # 定缺相关奖励（阶段1）
         if lack_color_discard:
-            reward += self.reward_config.get('lack_color_discard', 0.0)
+            lack_reward = self.reward_config.get('lack_color_discard', 0.0)
+            reward += lack_reward
+            # 调试信息（仅在reward_config为空时打印一次警告）
+            if lack_reward == 0.0 and not hasattr(self, '_lack_reward_warned'):
+                import warnings
+                warnings.warn(f"lack_color_discard detected but reward_config['lack_color_discard'] is 0.0 or missing. reward_config={self.reward_config}")
+                self._lack_reward_warned = True
         
         if illegal_action_attempt:
             reward += self.reward_config.get('illegal_action_attempt', 0.0)

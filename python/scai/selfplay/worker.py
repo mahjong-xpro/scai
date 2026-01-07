@@ -83,6 +83,9 @@ class SelfPlayWorker:
         
         # 初始化奖励函数（使用传入的 reward_config，确保与主进程一致）
         self.reward_shaping = RewardShaping(reward_config=reward_config or {})
+        # 调试信息：打印reward_config（仅第一个worker打印一次）
+        if self.worker_id == 0:
+            print(f"Worker {self.worker_id}: RewardShaping initialized with reward_config: {self.reward_shaping.reward_config}")
         
         # 初始化喂牌生成器（如果启用）
         if self.use_feeding and self.feeding_config:
@@ -92,6 +95,12 @@ class SelfPlayWorker:
             )
         else:
             self.feeding_generator = None
+    
+    def update_reward_config(self, reward_config: Dict):
+        """更新奖励配置（用于curriculum学习阶段变化时）"""
+        self.reward_shaping.reward_config = reward_config or {}
+        if self.worker_id == 0:
+            print(f"Worker {self.worker_id}: Updated reward_config: {self.reward_shaping.reward_config}")
     
     def play_game(
         self,
@@ -378,6 +387,11 @@ class SelfPlayWorker:
             lack_color_discard = False
             if action_type == "discard" and tile_index is not None and declared_suit is not None:
                 lack_color_discard = self._is_lack_color_tile(tile_index, declared_suit)
+                # 调试信息（仅在前几个游戏中打印）
+                if game_id < 3 and turn_count < 5:
+                    reward_config_value = self.reward_shaping.reward_config.get('lack_color_discard', 0.0)
+                    if lack_color_discard:
+                        print(f"Worker {self.worker_id}, Game {game_id}, Turn {turn_count}: 检测到缺门弃牌! tile_index={tile_index}, declared_suit={declared_suit}, reward_config['lack_color_discard']={reward_config_value}")
             
             # 执行动作
             is_hu = False
@@ -437,6 +451,9 @@ class SelfPlayWorker:
                         is_flower_pig=is_flower_pig,
                         lack_color_discard=lack_color_discard,
                     )
+                    # 调试信息（仅在前几个游戏中打印）
+                    if game_id < 3 and turn_count < 5 and lack_color_discard:
+                        print(f"Worker {self.worker_id}, Game {game_id}, Turn {turn_count}: 计算后的奖励={reward}, lack_color_discard={lack_color_discard}")
                     trajectory['rewards'].append(reward)
                 
             except Exception as e:
@@ -768,6 +785,14 @@ def collect_trajectories_parallel(
     import logging
     import time
     logger = logging.getLogger(__name__)
+    
+    # 如果提供了新的reward_config，先更新所有workers的reward_config
+    if reward_config is not None:
+        logger.info(f"Updating reward_config for {len(workers)} workers...")
+        update_futures = [worker.update_reward_config.remote(reward_config) for worker in workers]
+        # 等待所有更新完成
+        ray.get(update_futures)
+        logger.info("All workers' reward_config updated")
     
     logger.info(f"Submitting {len(workers)} worker tasks...")
     # 并行运行所有 Worker
