@@ -216,6 +216,10 @@ class DataCollector:
         # 用于保存到dashboard的游戏轨迹（选择有代表性的游戏）
         games_to_replay = []
         
+        # 生成全局唯一的游戏计数器（使用时间戳和迭代次数）
+        import time
+        base_game_id = int(time.time() * 1000) % 1000000  # 使用毫秒时间戳的后6位作为基础ID
+        
         for traj_idx, trajectory in enumerate(trajectories):
             # 验证轨迹（如果启用）
             is_valid = True
@@ -293,11 +297,18 @@ class DataCollector:
                 ) and len(trajectory['states']) > 10  # 至少10步
                 
                 if should_save:
-                    # 生成唯一的game_id（使用迭代次数和轨迹索引的组合）
-                    unique_game_id = (current_iteration or 0) * 10000 + traj_idx
+                    # 生成唯一的game_id（使用时间戳基础 + 迭代次数 + 轨迹索引）
+                    # 格式：base_game_id * 1000000 + iteration * 1000 + traj_idx
+                    # 这样可以确保全局唯一，且能反推出迭代和游戏序号
+                    iteration_part = (current_iteration or 0) % 1000  # 迭代次数（最多999）
+                    traj_part = traj_idx % 1000  # 轨迹索引（最多999）
+                    unique_game_id = base_game_id * 1000000 + iteration_part * 1000 + traj_part
+                    
                     games_to_replay.append({
                         'game_id': unique_game_id,
                         'iteration': current_iteration,
+                        'game_index_in_iteration': traj_idx,  # 在当前迭代中的游戏序号
+                        'total_games_in_iteration': num_trajectories,  # 当前迭代的总游戏数
                         'trajectory': trajectory,
                         'game_info': {
                             'final_score': final_score,

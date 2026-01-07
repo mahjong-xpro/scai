@@ -804,11 +804,15 @@ HTML_TEMPLATE = """
                                     <div style="display: flex; justify-content: space-between; align-items: center;">
                                         <div>
                                             <div style="font-weight: bold; color: #667eea; margin-bottom: 4px;">
-                                                游戏 #${replay.game_id} (迭代 ${replay.iteration || 'N/A'})
+                                                ${replay.iteration !== undefined && replay.game_index_in_iteration !== undefined 
+                                                    ? `迭代 ${replay.iteration} - 第 ${replay.game_index_in_iteration + 1} 局` 
+                                                    : `游戏 #${replay.game_id}`}
+                                                ${replay.total_games_in_iteration ? ` (共 ${replay.total_games_in_iteration} 局)` : ''}
                                             </div>
                                             <div style="color: #666; font-size: 14px;">
                                                 步骤数: ${replay.num_steps} | 
                                                 ${replay.game_info.final_score !== undefined ? `最终得分: ${replay.game_info.final_score}` : ''}
+                                                ${replay.game_info.is_winner ? ' 🏆' : ''}
                                             </div>
                                         </div>
                                         <div style="color: #999; font-size: 12px;">
@@ -879,7 +883,16 @@ HTML_TEMPLATE = """
                 isReplayPlaying = false;
                 
                 // 更新游戏信息
-                infoSpan.textContent = `游戏 #${replay.game_id} (迭代 ${replay.iteration || 'N/A'})`;
+                let gameTitle = '';
+                if (replay.iteration !== undefined && replay.game_index_in_iteration !== undefined) {
+                    gameTitle = `迭代 ${replay.iteration} - 第 ${replay.game_index_in_iteration + 1} 局`;
+                    if (replay.total_games_in_iteration) {
+                        gameTitle += ` (共 ${replay.total_games_in_iteration} 局)`;
+                    }
+                } else {
+                    gameTitle = `游戏 #${replay.game_id}`;
+                }
+                infoSpan.textContent = gameTitle;
                 
                 // 渲染第一步
                 renderReplayStep(0);
@@ -1148,6 +1161,8 @@ def get_replays():
         simplified = {
             'game_id': replay.get('game_id'),
             'iteration': replay.get('iteration'),
+            'game_index_in_iteration': replay.get('game_index_in_iteration'),
+            'total_games_in_iteration': replay.get('total_games_in_iteration'),
             'timestamp': replay.get('timestamp'),
             'game_info': replay.get('game_info', {}),
             'num_steps': len(replay.get('trajectory', {}).get('states', [])) if 'trajectory' in replay else 0,
