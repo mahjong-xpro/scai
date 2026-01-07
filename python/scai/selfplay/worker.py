@@ -222,6 +222,9 @@ class SelfPlayWorker:
         max_turns = 200
         turn_count = 0
         
+        # 记录每个玩家的弃牌历史（用于回放）
+        player_discards = {0: [], 1: [], 2: [], 3: []}
+        
         while not engine.is_game_over() and turn_count < max_turns:
             turn_count += 1
             
@@ -380,8 +383,12 @@ class SelfPlayWorker:
             trajectory['dones'].append(False)
             
             # 保存可读的游戏状态信息（用于回放）
+            # 注意：这里保存的是动作执行前的状态，弃牌会在动作执行后更新
             try:
-                readable_state = self._extract_readable_state(state, current_player, turn_count)
+                readable_state = self._extract_readable_state(state, engine, current_player, turn_count)
+                # 添加弃牌信息（从player_discards获取，此时是动作执行前的弃牌）
+                for i, player_info in enumerate(readable_state.get('players', [])):
+                    player_info['discards'] = [self._tile_index_to_name(idx) for idx in player_discards.get(i, [])]
                 trajectory.setdefault('readable_states', []).append(readable_state)
             except Exception as e:
                 # 如果提取失败，保存基本信息
@@ -396,10 +403,21 @@ class SelfPlayWorker:
                 action_index, state, current_player
             )
             
+            # 在执行动作前，记录当前所有玩家的弃牌（用于回放）
+            # 注意：这里记录的是动作执行前的弃牌状态
+            discard_snapshot = {}
+            try:
+                # 通过获取每个玩家手牌和总牌数来推断弃牌
+                # 或者我们可以通过其他方式记录
+                pass
+            except Exception:
+                pass
+            
             # 更新可读状态中的动作信息
             if len(trajectory.get('readable_states', [])) > 0:
                 trajectory['readable_states'][-1]['action_type'] = action_type
                 trajectory['readable_states'][-1]['action_tile_index'] = tile_index
+                trajectory['readable_states'][-1]['discard_snapshot'] = discard_snapshot
             
             # 在执行动作前，获取玩家定缺的花色（用于检查缺门弃牌奖励）
             declared_suit = None
@@ -428,11 +446,27 @@ class SelfPlayWorker:
                     is_concealed,
                 )
                 
+                # 如果动作是出牌，记录弃牌（动作执行后）
+                if action_type == "discard" and tile_index is not None:
+                    player_discards[current_player].append(tile_index)
+                
                 # 更新状态以获取最新信息（用于奖励计算）
                 try:
                     state = engine.state
                     is_ready_after = state.is_player_ready(current_player)
                     is_flower_pig = self._check_flower_pig(state, current_player)
+                    
+                    # 更新可读状态中的副牌信息（动作执行后）
+                    if len(trajectory.get('readable_states', [])) > 0:
+                        last_readable_state = trajectory['readable_states'][-1]
+                        # 重新提取状态以获取最新的副牌信息
+                        updated_state = self._extract_readable_state(state, engine, current_player, turn_count)
+                        # 更新副牌和弃牌信息
+                        for i, player in enumerate(updated_state.get('players', [])):
+                            if i < len(last_readable_state.get('players', [])):
+                                last_readable_state['players'][i]['melds'] = player.get('melds', [])
+                                # 更新弃牌信息（转换为牌名）
+                                last_readable_state['players'][i]['discards'] = [self._tile_index_to_name(idx) for idx in player_discards.get(i, [])]
                 except Exception as e:
                     error_str = str(e)
                     # 如果是状态验证错误，使用默认值并继续（验证可能过于严格）
@@ -645,9 +679,34 @@ class SelfPlayWorker:
         # 如果打出的牌的花色索引等于定缺花色索引，说明打出了缺门牌
         return suit_index == declared_suit_index
     
+    def _tile_index_to_name(self, tile_index: int) -> str:
+        """将tile_index转换为牌名字符串
+        
+        参数：
+        - tile_index: 牌索引（0-107）
+        
+        返回：
+        - 牌名字符串，如 "Wan(1)", "Tong(5)", "Tiao(9)"
+        """
+        if tile_index < 0 or tile_index >= 108:
+            return f"Unknown({tile_index})"
+        
+        # tile_index 范围：0-107
+        # 0-35: Wan (suit_index=0), 每36张一个花色，每4张一个点数
+        # 36-71: Tong (suit_index=1)
+        # 72-107: Tiao (suit_index=2)
+        suit_index = tile_index // 36
+        rank_index = (tile_index % 36) // 4 + 1  # 点数从1开始
+        
+        suit_map = {0: "Wan", 1: "Tong", 2: "Tiao"}
+        suit = suit_map.get(suit_index, "Unknown")
+        
+        return f"{suit}({rank_index})"
+    
     def _extract_readable_state(
         self,
         state,
+        engine,
         current_player: int,
         turn: int,
     ) -> Dict[str, Any]:
@@ -655,6 +714,7 @@ class SelfPlayWorker:
         
         参数：
         - state: 游戏状态
+        - engine: 游戏引擎（用于获取弃牌历史等）
         - current_player: 当前玩家ID
         - turn: 当前回合数
         
@@ -673,6 +733,8 @@ class SelfPlayWorker:
                 player_info = {
                     'player_id': player_id,
                     'hand': {},
+                    'melds': [],  # 副牌（碰/杠）
+                    'discards': [],  # 弃牌
                     'declared_suit': None,
                     'is_ready': False,
                 }
@@ -682,7 +744,15 @@ class SelfPlayWorker:
                     hand = state.get_player_hand(player_id)
                     if isinstance(hand, dict):
                         player_info['hand'] = {str(k): int(v) for k, v in hand.items()}
-                except Exception:
+                except Exception as e:
+                    pass
+                
+                # 获取副牌（碰/杠）
+                try:
+                    melds = state.get_player_melds(player_id)
+                    if isinstance(melds, list):
+                        player_info['melds'] = [str(m) for m in melds]
+                except Exception as e:
                     pass
                 
                 # 获取定缺花色

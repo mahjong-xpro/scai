@@ -1004,6 +1004,8 @@ HTML_TEMPLATE = """
                 const player = players[i] || {};
                 const isCurrentPlayer = i === currentPlayer;
                 const hand = player.hand || {};
+                const melds = player.melds || [];
+                const discards = player.discards || [];
                 const declaredSuit = player.declared_suit || '未定缺';
                 const isReady = player.is_ready || false;
                 
@@ -1022,12 +1024,33 @@ HTML_TEMPLATE = """
                         
                         <div style="margin-bottom: 8px;">
                             <div style="font-size: 12px; color: #666; margin-bottom: 4px;">定缺: <strong>${declaredSuit}</strong></div>
-                            <div style="font-size: 12px; color: #666;">手牌: <strong>${handCount} 张</strong></div>
+                            <div style="font-size: 12px; color: #666;">手牌: <strong>${handCount} 张</strong> | 副牌: <strong>${melds.length} 组</strong> | 弃牌: <strong>${discards.length} 张</strong></div>
                         </div>
                         
-                        <div style="background: #f9f9f9; padding: 8px; border-radius: 4px; min-height: 60px; max-height: 120px; overflow-y: auto;">
-                            ${renderPlayerHand(hand)}
+                        <div style="margin-bottom: 12px;">
+                            <div style="font-size: 11px; color: #999; margin-bottom: 4px; font-weight: bold;">手牌:</div>
+                            <div style="background: #f9f9f9; padding: 8px; border-radius: 4px; min-height: 40px; max-height: 100px; overflow-y: auto;">
+                                ${renderPlayerHand(hand)}
+                            </div>
                         </div>
+                        
+                        ${melds.length > 0 ? `
+                            <div style="margin-bottom: 12px;">
+                                <div style="font-size: 11px; color: #999; margin-bottom: 4px; font-weight: bold;">副牌 (碰/杠):</div>
+                                <div style="background: #fff3cd; padding: 8px; border-radius: 4px; min-height: 30px; max-height: 80px; overflow-y: auto;">
+                                    ${renderPlayerMelds(melds)}
+                                </div>
+                            </div>
+                        ` : ''}
+                        
+                        ${discards.length > 0 ? `
+                            <div>
+                                <div style="font-size: 11px; color: #999; margin-bottom: 4px; font-weight: bold;">弃牌:</div>
+                                <div style="background: #f0f0f0; padding: 8px; border-radius: 4px; min-height: 30px; max-height: 80px; overflow-y: auto;">
+                                    ${renderPlayerDiscards(discards)}
+                                </div>
+                            </div>
+                        ` : ''}
                     </div>
                 `;
             }
@@ -1069,6 +1092,54 @@ HTML_TEMPLATE = """
                         html += `<span style="background: #fff; border: 1px solid #ddd; padding: 4px 8px; border-radius: 4px; font-size: 11px; color: #333;">${tileName}</span>`;
                     }
                 }
+            }
+            html += '</div>';
+            return html;
+        }
+        
+        // 渲染玩家副牌（碰/杠）
+        function renderPlayerMelds(melds) {
+            if (!melds || melds.length === 0) {
+                return '<div style="color: #999; font-size: 12px;">无副牌</div>';
+            }
+            
+            let html = '<div style="display: flex; flex-wrap: wrap; gap: 4px;">';
+            for (const meld of melds) {
+                // 解析副牌字符串，例如 "Triplet { tile: Wan(1) }" 或 "Kong { tile: Tong(5), is_concealed: false }"
+                const meldType = meld.includes('Triplet') ? '碰' : '杠';
+                const tileMatch = meld.match(/tile:\s*(\w+)\((\d+)\)/);
+                if (tileMatch) {
+                    const suit = tileMatch[1];
+                    const rank = tileMatch[2];
+                    const tileName = formatTileName(`${suit}(${rank})`);
+                    const isConcealed = meld.includes('is_concealed: true');
+                    const count = meldType === '碰' ? 3 : 4;
+                    
+                    html += `<span style="background: ${isConcealed ? '#d4edda' : '#fff3cd'}; border: 1px solid ${isConcealed ? '#c3e6cb' : '#ffc107'}; padding: 4px 8px; border-radius: 4px; font-size: 11px; color: #333; font-weight: bold;">${meldType}: ${tileName}×${count}</span>`;
+                } else {
+                    html += `<span style="background: #fff3cd; border: 1px solid #ffc107; padding: 4px 8px; border-radius: 4px; font-size: 11px; color: #333;">${meld}</span>`;
+                }
+            }
+            html += '</div>';
+            return html;
+        }
+        
+        // 渲染玩家弃牌
+        function renderPlayerDiscards(discards) {
+            if (!discards || discards.length === 0) {
+                return '<div style="color: #999; font-size: 12px;">无弃牌</div>';
+            }
+            
+            let html = '<div style="display: flex; flex-wrap: wrap; gap: 4px;">';
+            for (const discard of discards) {
+                // 如果discard是字符串（牌名），直接格式化
+                // 如果是对象，提取tile字段
+                let tileStr = discard;
+                if (typeof discard === 'object' && discard.tile) {
+                    tileStr = discard.tile;
+                }
+                const tileName = formatTileName(tileStr);
+                html += `<span style="background: #f0f0f0; border: 1px solid #ccc; padding: 4px 8px; border-radius: 4px; font-size: 11px; color: #666;">${tileName}</span>`;
             }
             html += '</div>';
             return html;
