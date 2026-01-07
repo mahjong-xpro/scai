@@ -263,8 +263,16 @@ HTML_TEMPLATE = """
             
             <div class="card">
                 <h2>📈 性能指标</h2>
+                <div style="margin-bottom: 16px;">
+                    <button onclick="toggleMetricsHistory()" id="metrics-history-btn" style="padding: 8px 16px; background: #667eea; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                        查看历史趋势
+                    </button>
+                </div>
                 <div id="metrics" class="metrics-grid">
                     <div class="loading">加载中...</div>
+                </div>
+                <div id="metrics-history" style="display: none; margin-top: 20px;">
+                    <canvas id="metrics-chart" style="max-height: 400px;"></canvas>
                 </div>
             </div>
         </div>
@@ -346,18 +354,25 @@ HTML_TEMPLATE = """
             document.getElementById('stage-progress').style.width = stageProgress + '%';
             document.getElementById('stage-progress').textContent = stageProgress + '%';
             
-            // 更新性能指标
+            // 更新性能指标（显示所有指标，固定排序）
             const metricsDiv = document.getElementById('metrics');
-            if (data.metrics && Object.keys(data.metrics).length > 0) {
-                metricsDiv.innerHTML = Object.entries(data.metrics).map(([key, value]) => `
+            let metricsHTML = '';
+            
+            // 按照固定顺序显示所有指标
+            ALL_METRICS_ORDER.forEach(key => {
+                const value = data.metrics && data.metrics[key] !== undefined ? data.metrics[key] : null;
+                const displayValue = value !== null ? formatMetricValue(value) : '-';
+                const label = formatMetricName(key);
+                
+                metricsHTML += `
                     <div class="metric-item">
-                        <div class="metric-label">${formatMetricName(key)}</div>
-                        <div class="metric-value">${formatMetricValue(value)}</div>
+                        <div class="metric-label">${label}</div>
+                        <div class="metric-value" style="color: ${value !== null ? '#667eea' : '#999'}">${displayValue}</div>
                     </div>
-                `).join('');
-            } else {
-                metricsDiv.innerHTML = '<div class="metric-item"><div class="metric-label">暂无数据</div></div>';
-            }
+                `;
+            });
+            
+            metricsDiv.innerHTML = metricsHTML || '<div class="metric-item"><div class="metric-label">暂无数据</div></div>';
             
             // 更新阶段目标
             const objectivesList = document.getElementById('objectives');
@@ -369,18 +384,26 @@ HTML_TEMPLATE = """
                 objectivesList.innerHTML = '<li>暂无目标</li>';
             }
             
-            // 更新奖励配置
+            // 更新奖励配置（显示所有奖励项，固定排序）
             const rewardConfigDiv = document.getElementById('reward-config');
-            if (data.reward_config && Object.keys(data.reward_config).length > 0) {
-                rewardConfigDiv.innerHTML = Object.entries(data.reward_config).map(([key, value]) => `
+            let rewardHTML = '';
+            
+            // 按照固定顺序显示所有奖励项
+            ALL_REWARDS_ORDER.forEach(key => {
+                const value = data.reward_config && data.reward_config[key] !== undefined ? data.reward_config[key] : null;
+                const displayValue = value !== null ? value.toFixed(2) : '-';
+                const label = formatRewardName(key);
+                const color = value !== null ? (value >= 0 ? '#667eea' : '#c62828') : '#999';
+                
+                rewardHTML += `
                     <div class="reward-item">
-                        <span class="reward-label">${formatRewardName(key)}</span>
-                        <span class="reward-value">${value.toFixed(2)}</span>
+                        <span class="reward-label">${label}</span>
+                        <span class="reward-value" style="color: ${color}">${displayValue}</span>
                     </div>
-                `).join('');
-            } else {
-                rewardConfigDiv.innerHTML = '<div class="reward-item"><span class="reward-label">暂无配置</span></div>';
-            }
+                `;
+            });
+            
+            rewardConfigDiv.innerHTML = rewardHTML || '<div class="reward-item"><span class="reward-label">暂无配置</span></div>';
             
             // 更新时间戳
             if (data.timestamp) {
@@ -390,16 +413,41 @@ HTML_TEMPLATE = """
             }
         }
         
+        // 定义所有可能的指标（固定顺序）
+        const ALL_METRICS_ORDER = [
+            'win_rate',              // 胜率
+            'ready_rate',            // 听牌率
+            'flower_pig_rate',      // 花猪率
+            'declare_suit_correct_rate', // 定缺选择正确率
+            'average_fan',           // 平均番数
+            'gen_count',             // 平均根数
+            'elo_score',             // Elo评分
+            'games_played',          // 游戏局数
+            'hu_types_learned',      // 学会的胡牌类型数
+            'policy_loss',           // 策略损失
+            'value_loss',            // 价值损失
+            'entropy_loss',          // 熵损失
+            'total_loss',            // 总损失
+        ];
+        
+        const METRIC_NAMES = {
+            'win_rate': '胜率',
+            'ready_rate': '听牌率',
+            'flower_pig_rate': '花猪率',
+            'declare_suit_correct_rate': '定缺正确率',
+            'average_fan': '平均番数',
+            'gen_count': '平均根数',
+            'elo_score': 'Elo评分',
+            'games_played': '游戏局数',
+            'hu_types_learned': '学会的胡牌类型',
+            'policy_loss': '策略损失',
+            'value_loss': '价值损失',
+            'entropy_loss': '熵损失',
+            'total_loss': '总损失',
+        };
+        
         function formatMetricName(key) {
-            const names = {
-                'win_rate': '胜率',
-                'ready_rate': '听牌率',
-                'flower_pig_rate': '花猪率',
-                'average_fan': '平均番数',
-                'elo_score': 'Elo评分',
-                'games_played': '游戏局数',
-            };
-            return names[key] || key;
+            return METRIC_NAMES[key] || key;
         }
         
         function formatMetricValue(value) {
@@ -412,16 +460,275 @@ HTML_TEMPLATE = """
             return value;
         }
         
+        // 定义所有可能的奖励配置（固定顺序）
+        const ALL_REWARDS_ORDER = [
+            'base_win',                 // 基础胡牌奖励
+            'ready_reward',             // 听牌奖励
+            'ready_hand',               // 听牌一次性重奖
+            'shanten_reward',           // 向听数奖励权重
+            'shanten_decrease',         // 向听数减少奖励
+            'shanten_increase',         // 向听数增加惩罚
+            'lack_color_discard',       // 缺门弃牌奖励
+            'illegal_action_attempt',   // 非法动作惩罚
+            'flower_pig_penalty',       // 花猪惩罚
+            'point_loss',               // 点炮惩罚
+            'fan_multiplier',           // 番数倍数
+            'gen_reward',               // 根奖励
+            'shouting_penalty',         // 查大叫罚分
+            'safe_discard_bonus',       // 安全弃牌奖励
+            'pass_hu_success',          // 过胡成功奖励
+            'call_transfer_loss',       // 呼叫转移损失
+        ];
+        
+        const REWARD_NAMES = {
+            'base_win': '基础胡牌奖励',
+            'ready_reward': '听牌奖励',
+            'ready_hand': '听牌一次性重奖',
+            'shanten_reward': '向听数奖励权重',
+            'shanten_decrease': '向听数减少奖励',
+            'shanten_increase': '向听数增加惩罚',
+            'lack_color_discard': '缺门弃牌奖励',
+            'illegal_action_attempt': '非法动作惩罚',
+            'flower_pig_penalty': '花猪惩罚',
+            'point_loss': '点炮惩罚',
+            'fan_multiplier': '番数倍数',
+            'gen_reward': '根奖励',
+            'shouting_penalty': '查大叫罚分',
+            'safe_discard_bonus': '安全弃牌奖励',
+            'pass_hu_success': '过胡成功奖励',
+            'call_transfer_loss': '呼叫转移损失',
+        };
+        
         function formatRewardName(key) {
-            const names = {
-                'base_win': '基础胡牌奖励',
-                'ready_reward': '听牌奖励',
-                'shanten_reward': '向听数奖励',
-                'lack_color_discard': '缺门弃牌奖励',
-                'point_loss': '点炮惩罚',
-                'fan_multiplier': '番数倍数',
-            };
-            return names[key] || key;
+            return REWARD_NAMES[key] || key;
+        }
+        
+        // 历史记录相关变量
+        let metricsChart = null;
+        let rewardChart = null;
+        let metricsHistoryVisible = false;
+        let rewardHistoryVisible = false;
+        
+        // 加载 Chart.js（用于绘制图表）
+        const chartScript = document.createElement('script');
+        chartScript.src = 'https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js';
+        chartScript.onload = function() {
+            console.log('Chart.js loaded');
+        };
+        document.head.appendChild(chartScript);
+        
+        function toggleMetricsHistory() {
+            metricsHistoryVisible = !metricsHistoryVisible;
+            const historyDiv = document.getElementById('metrics-history');
+            const btn = document.getElementById('metrics-history-btn');
+            
+            if (metricsHistoryVisible) {
+                historyDiv.style.display = 'block';
+                btn.textContent = '隐藏历史趋势';
+                loadMetricsHistory();
+            } else {
+                historyDiv.style.display = 'none';
+                btn.textContent = '查看历史趋势';
+            }
+        }
+        
+        function toggleRewardHistory() {
+            rewardHistoryVisible = !rewardHistoryVisible;
+            const historyDiv = document.getElementById('reward-history');
+            const btn = document.getElementById('reward-history-btn');
+            
+            if (rewardHistoryVisible) {
+                historyDiv.style.display = 'block';
+                btn.textContent = '隐藏历史变化';
+                loadRewardHistory();
+            } else {
+                historyDiv.style.display = 'none';
+                btn.textContent = '查看历史变化';
+            }
+        }
+        
+        async function loadMetricsHistory() {
+            try {
+                const response = await fetch('/api/history?limit=100');
+                const data = await response.json();
+                
+                if (!data.history || data.history.length === 0) {
+                    document.getElementById('metrics-history').innerHTML = '<p style="text-align: center; color: #666;">暂无历史数据</p>';
+                    return;
+                }
+                
+                // 提取数据（按照固定顺序）
+                const iterations = data.history.map(h => h.current_iteration || 0);
+                const metrics = {};
+                
+                // 按照固定顺序初始化
+                ALL_METRICS_ORDER.forEach(key => {
+                    metrics[key] = [];
+                });
+                
+                // 填充数据
+                data.history.forEach(h => {
+                    if (h.metrics) {
+                        ALL_METRICS_ORDER.forEach(key => {
+                            metrics[key].push(h.metrics[key] !== undefined ? h.metrics[key] : null);
+                        });
+                    } else {
+                        ALL_METRICS_ORDER.forEach(key => {
+                            metrics[key].push(null);
+                        });
+                    }
+                });
+                
+                // 创建图表
+                const ctx = document.getElementById('metrics-chart');
+                if (metricsChart) {
+                    metricsChart.destroy();
+                }
+                
+                const colors = ['#667eea', '#764ba2', '#f093fb', '#4facfe', '#00f2fe', '#43e97b', '#fa709a', '#fee140', '#ff6b6b', '#4ecdc4', '#45b7d1', '#f7b731', '#5f27cd'];
+                
+                const datasets = ALL_METRICS_ORDER.map((key, index) => {
+                    // 只显示有数据的指标
+                    const hasData = metrics[key].some(v => v !== null);
+                    if (!hasData) return null;
+                    
+                    return {
+                        label: formatMetricName(key),
+                        data: metrics[key],
+                        borderColor: colors[index % colors.length],
+                        backgroundColor: colors[index % colors.length] + '20',
+                        tension: 0.4,
+                        spanGaps: true,  // 跳过null值
+                    };
+                }).filter(d => d !== null);
+                
+                if (datasets.length === 0) {
+                    document.getElementById('metrics-history').innerHTML = '<p style="text-align: center; color: #666;">暂无有效数据</p>';
+                    return;
+                }
+                
+                metricsChart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: iterations,
+                        datasets: datasets,
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: true,
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                            },
+                        },
+                        plugins: {
+                            legend: {
+                                display: true,
+                                position: 'top',
+                            },
+                            tooltip: {
+                                mode: 'index',
+                                intersect: false,
+                            },
+                        },
+                    },
+                });
+            } catch (e) {
+                console.error('Error loading metrics history:', e);
+                document.getElementById('metrics-history').innerHTML = '<p style="text-align: center; color: #c62828;">加载历史数据失败</p>';
+            }
+        }
+        
+        async function loadRewardHistory() {
+            try {
+                const response = await fetch('/api/history?limit=100');
+                const data = await response.json();
+                
+                if (!data.history || data.history.length === 0) {
+                    document.getElementById('reward-history').innerHTML = '<p style="text-align: center; color: #666;">暂无历史数据</p>';
+                    return;
+                }
+                
+                // 提取数据（按照固定顺序）
+                const iterations = data.history.map(h => h.current_iteration || 0);
+                const rewards = {};
+                
+                // 按照固定顺序初始化
+                ALL_REWARDS_ORDER.forEach(key => {
+                    rewards[key] = [];
+                });
+                
+                // 填充数据
+                data.history.forEach(h => {
+                    if (h.reward_config) {
+                        ALL_REWARDS_ORDER.forEach(key => {
+                            rewards[key].push(h.reward_config[key] !== undefined ? h.reward_config[key] : null);
+                        });
+                    } else {
+                        ALL_REWARDS_ORDER.forEach(key => {
+                            rewards[key].push(null);
+                        });
+                    }
+                });
+                
+                // 创建图表
+                const ctx = document.getElementById('reward-chart');
+                if (rewardChart) {
+                    rewardChart.destroy();
+                }
+                
+                const colors = ['#667eea', '#764ba2', '#f093fb', '#4facfe', '#00f2fe', '#43e97b', '#fa709a', '#fee140', '#ff6b6b', '#4ecdc4', '#45b7d1', '#f7b731', '#5f27cd', '#00d2d3', '#ff9ff3', '#54a0ff'];
+                
+                const datasets = ALL_REWARDS_ORDER.map((key, index) => {
+                    // 只显示有数据的奖励项
+                    const hasData = rewards[key].some(v => v !== null);
+                    if (!hasData) return null;
+                    
+                    return {
+                        label: formatRewardName(key),
+                        data: rewards[key],
+                        borderColor: colors[index % colors.length],
+                        backgroundColor: colors[index % colors.length] + '20',
+                        tension: 0.4,
+                        spanGaps: true,  // 跳过null值
+                    };
+                }).filter(d => d !== null);
+                
+                if (datasets.length === 0) {
+                    document.getElementById('reward-history').innerHTML = '<p style="text-align: center; color: #666;">暂无有效数据</p>';
+                    return;
+                }
+                
+                rewardChart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: iterations,
+                        datasets: datasets,
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: true,
+                        scales: {
+                            y: {
+                                beginAtZero: false,  // 奖励值可能为负
+                            },
+                        },
+                        plugins: {
+                            legend: {
+                                display: true,
+                                position: 'top',
+                            },
+                            tooltip: {
+                                mode: 'index',
+                                intersect: false,
+                            },
+                        },
+                    },
+                });
+            } catch (e) {
+                console.error('Error loading reward history:', e);
+                document.getElementById('reward-history').innerHTML = '<p style="text-align: center; color: #c62828;">加载历史数据失败</p>';
+            }
         }
         
         // 初始化
@@ -433,6 +740,14 @@ HTML_TEMPLATE = """
                 const response = await fetch('/api/status');
                 const data = await response.json();
                 updateUI(data);
+                
+                // 如果历史图表可见，更新图表
+                if (metricsHistoryVisible && metricsChart) {
+                    loadMetricsHistory();
+                }
+                if (rewardHistoryVisible && rewardChart) {
+                    loadRewardHistory();
+                }
             } catch (e) {
                 console.error('Error fetching status:', e);
             }
