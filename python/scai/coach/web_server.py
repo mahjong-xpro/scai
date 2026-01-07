@@ -932,6 +932,7 @@ HTML_TEMPLATE = """
             const states = trajectory.states || [];
             const actions = trajectory.actions || [];
             const rewards = trajectory.rewards || [];
+            const readableStates = trajectory.readable_states || [];
             
             if (step < 0 || step >= states.length) {
                 return;
@@ -944,46 +945,181 @@ HTML_TEMPLATE = """
             
             // 渲染当前步骤
             const contentDiv = document.getElementById('replay-content');
-            const state = states[step];
             const action = actions[step];
             const reward = rewards[step];
+            const readableState = readableStates[step] || {};
             
-            // 获取状态信息
-            let stateInfo = 'N/A';
-            if (state) {
-                if (Array.isArray(state)) {
-                    // 如果是数组，显示维度信息
-                    const dims = getArrayDimensions(state);
-                    stateInfo = `数组维度: ${dims}`;
-                } else if (typeof state === 'object' && state !== null) {
-                    // 如果是对象，尝试获取shape
-                    if (state.shape) {
-                        stateInfo = `形状: [${state.shape.join(', ')}]`;
-                    } else {
-                        stateInfo = `对象 (${Object.keys(state).length} 个键)`;
-                    }
-                } else {
-                    stateInfo = typeof state;
-                }
+            // 如果有可读状态，显示4人麻将桌
+            if (readableState.players && readableState.players.length === 4) {
+                contentDiv.innerHTML = renderMahjongTable(readableState, action, reward, step);
+            } else {
+                // 回退到简单显示
+                contentDiv.innerHTML = `
+                    <div style="background: white; padding: 16px; border-radius: 8px;">
+                        <h3 style="color: #667eea; margin-bottom: 12px;">步骤 ${step + 1}</h3>
+                        <div style="margin-bottom: 8px;">
+                            <strong>动作:</strong> ${formatAction(action)}
+                        </div>
+                        <div style="margin-bottom: 8px;">
+                            <strong>奖励:</strong> <span style="color: ${reward >= 0 ? '#43e97b' : '#ff6b6b'}">${typeof reward === 'number' ? reward.toFixed(3) : reward}</span>
+                        </div>
+                        <div style="color: #999; font-size: 12px; margin-top: 16px;">
+                            可读状态信息不可用
+                        </div>
+                    </div>
+                `;
+            }
+        }
+        
+        // 渲染麻将桌（4人布局）
+        function renderMahjongTable(readableState, action, reward, step) {
+            const currentPlayer = readableState.current_player || 0;
+            const players = readableState.players || [];
+            const actionType = readableState.action_type || 'unknown';
+            const actionTileIndex = readableState.action_tile_index;
+            const actionResult = readableState.action_result || {};
+            const actionResultType = readableState.action_result_type || '';
+            
+            // 玩家位置：0=下家(自己), 1=对家, 2=上家, 3=右家
+            const playerPositions = ['下家 (自己)', '对家', '上家', '右家'];
+            const playerColors = ['#667eea', '#764ba2', '#f093fb', '#4facfe'];
+            
+            let html = `
+                <div style="background: #f5f5f5; padding: 20px; border-radius: 12px;">
+                    <div style="text-align: center; margin-bottom: 20px;">
+                        <div style="display: inline-block; background: white; padding: 8px 16px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                            <span style="font-weight: bold; color: #667eea;">回合 ${readableState.turn || step + 1}</span>
+                            <span style="margin: 0 8px; color: #999;">|</span>
+                            <span style="color: #666;">当前玩家: 玩家${currentPlayer} (${playerPositions[currentPlayer]})</span>
+                            <span style="margin: 0 8px; color: #999;">|</span>
+                            <span style="color: ${reward >= 0 ? '#43e97b' : '#ff6b6b'}">奖励: ${typeof reward === 'number' ? reward.toFixed(3) : reward}</span>
+                        </div>
+                    </div>
+                    
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px;">
+            `;
+            
+            // 渲染每个玩家
+            for (let i = 0; i < 4; i++) {
+                const player = players[i] || {};
+                const isCurrentPlayer = i === currentPlayer;
+                const hand = player.hand || {};
+                const declaredSuit = player.declared_suit || '未定缺';
+                const isReady = player.is_ready || false;
+                
+                // 计算手牌总数
+                const handCount = Object.values(hand).reduce((sum, count) => sum + count, 0);
+                
+                html += `
+                    <div style="background: white; padding: 16px; border-radius: 8px; border: 2px solid ${isCurrentPlayer ? playerColors[i] : '#e0e0e0'}; ${isCurrentPlayer ? 'box-shadow: 0 4px 8px rgba(102, 126, 234, 0.3);' : ''}">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                            <div style="font-weight: bold; color: ${playerColors[i]};">
+                                玩家${i} (${playerPositions[i]})
+                                ${isCurrentPlayer ? ' 👈 当前' : ''}
+                            </div>
+                            ${isReady ? '<span style="background: #43e97b; color: white; padding: 2px 8px; border-radius: 4px; font-size: 12px;">听牌</span>' : ''}
+                        </div>
+                        
+                        <div style="margin-bottom: 8px;">
+                            <div style="font-size: 12px; color: #666; margin-bottom: 4px;">定缺: <strong>${declaredSuit}</strong></div>
+                            <div style="font-size: 12px; color: #666;">手牌: <strong>${handCount} 张</strong></div>
+                        </div>
+                        
+                        <div style="background: #f9f9f9; padding: 8px; border-radius: 4px; min-height: 60px; max-height: 120px; overflow-y: auto;">
+                            ${renderPlayerHand(hand)}
+                        </div>
+                    </div>
+                `;
             }
             
-            // 简化显示（实际可以根据需要扩展）
-            contentDiv.innerHTML = `
-                <div style="background: white; padding: 16px; border-radius: 8px;">
-                    <h3 style="color: #667eea; margin-bottom: 12px;">步骤 ${step + 1}</h3>
-                    <div style="margin-bottom: 8px;">
-                        <strong>动作:</strong> ${formatAction(action)}
+            html += `
                     </div>
-                    <div style="margin-bottom: 8px;">
-                        <strong>奖励:</strong> <span style="color: ${reward >= 0 ? '#43e97b' : '#ff6b6b'}">${typeof reward === 'number' ? reward.toFixed(3) : reward}</span>
-                    </div>
-                    <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid #e0e0e0;">
-                        <div style="color: #666; font-size: 14px;">
-                            <strong>状态信息:</strong> ${stateInfo}
+                    
+                    <div style="background: white; padding: 16px; border-radius: 8px; margin-top: 16px;">
+                        <div style="font-weight: bold; color: #667eea; margin-bottom: 12px;">当前动作</div>
+                        <div style="margin-bottom: 8px;">
+                            <strong>动作类型:</strong> ${formatActionType(actionType, actionTileIndex)}
                         </div>
+                        ${actionResultType ? `
+                            <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #e0e0e0;">
+                                <strong>动作结果:</strong> 
+                                <span style="color: ${actionResultType === 'won' ? '#43e97b' : '#666'}">
+                                    ${formatActionResult(actionResultType, actionResult)}
+                                </span>
+                            </div>
+                        ` : ''}
                     </div>
                 </div>
             `;
+            
+            return html;
+        }
+        
+        // 渲染玩家手牌
+        function renderPlayerHand(hand) {
+            if (!hand || Object.keys(hand).length === 0) {
+                return '<div style="color: #999; font-size: 12px;">手牌信息不可用</div>';
+            }
+            
+            let html = '<div style="display: flex; flex-wrap: wrap; gap: 4px;">';
+            for (const [tile, count] of Object.entries(hand)) {
+                if (count > 0) {
+                    const tileName = formatTileName(tile);
+                    for (let i = 0; i < count; i++) {
+                        html += `<span style="background: #fff; border: 1px solid #ddd; padding: 4px 8px; border-radius: 4px; font-size: 11px; color: #333;">${tileName}</span>`;
+                    }
+                }
+            }
+            html += '</div>';
+            return html;
+        }
+        
+        // 格式化牌名
+        function formatTileName(tileStr) {
+            // 将 "Wan(1)" 格式转换为 "一万"
+            const match = tileStr.match(/(\w+)\((\d+)\)/);
+            if (match) {
+                const suit = match[1];
+                const rank = match[2];
+                const suitMap = {'Wan': '万', 'Tong': '筒', 'Tiao': '条'};
+                const suitName = suitMap[suit] || suit;
+                const rankNames = ['', '一', '二', '三', '四', '五', '六', '七', '八', '九'];
+                const rankName = rankNames[parseInt(rank)] || rank;
+                return rankName + suitName;
+            }
+            return tileStr;
+        }
+        
+        // 格式化动作类型
+        function formatActionType(actionType, tileIndex) {
+            const actionNames = {
+                'discard': '出牌',
+                'pong': '碰',
+                'gang': '杠',
+                'win': '胡',
+                'pass': '过',
+                'draw': '摸牌',
+            };
+            const name = actionNames[actionType] || actionType;
+            if (tileIndex !== undefined && tileIndex !== null) {
+                return `${name} (牌索引: ${tileIndex})`;
+            }
+            return name;
+        }
+        
+        // 格式化动作结果
+        function formatActionResult(resultType, result) {
+            if (resultType === 'won') {
+                const playerId = result.player_id !== undefined ? result.player_id : '?';
+                return `玩家${playerId} 胡牌！`;
+            } else if (resultType === 'ponged') {
+                return '碰牌成功';
+            } else if (resultType === 'ganged') {
+                return '杠牌成功';
+            } else if (resultType === 'passed') {
+                return '过';
+            }
+            return resultType;
         }
         
         // 获取数组维度

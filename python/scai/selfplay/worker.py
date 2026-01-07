@@ -170,6 +170,8 @@ class SelfPlayWorker:
             'dones': [],
             'action_masks': [],
             'final_score': 0.0,
+            # 用于回放的可读游戏状态信息
+            'readable_states': [],
         }
         
         # 定缺阶段：所有玩家必须定缺
@@ -377,10 +379,27 @@ class SelfPlayWorker:
             trajectory['action_masks'].append(action_mask_array)
             trajectory['dones'].append(False)
             
+            # 保存可读的游戏状态信息（用于回放）
+            try:
+                readable_state = self._extract_readable_state(state, current_player, turn_count)
+                trajectory.setdefault('readable_states', []).append(readable_state)
+            except Exception as e:
+                # 如果提取失败，保存基本信息
+                trajectory.setdefault('readable_states', []).append({
+                    'current_player': current_player,
+                    'turn': turn_count,
+                    'error': str(e),
+                })
+            
             # 将动作索引转换为动作类型和参数
             action_type, tile_index, is_concealed = self._index_to_action_params(
                 action_index, state, current_player
             )
+            
+            # 更新可读状态中的动作信息
+            if len(trajectory.get('readable_states', [])) > 0:
+                trajectory['readable_states'][-1]['action_type'] = action_type
+                trajectory['readable_states'][-1]['action_tile_index'] = tile_index
             
             # 在执行动作前，获取玩家定缺的花色（用于检查缺门弃牌奖励）
             declared_suit = None
@@ -427,6 +446,13 @@ class SelfPlayWorker:
                         is_ready_after = False
                         is_flower_pig = False
                 
+                # 更新可读状态中的动作结果
+                if len(trajectory.get('readable_states', [])) > 0:
+                    last_readable_state = trajectory['readable_states'][-1]
+                    last_readable_state['action_result'] = result
+                    if isinstance(result, dict):
+                        last_readable_state['action_result_type'] = result.get('type', 'unknown')
+                
                 # 检查是否胡牌
                 if isinstance(result, dict) and result.get('type') == 'won':
                     # 游戏结束
@@ -439,6 +465,11 @@ class SelfPlayWorker:
                         settlement_str, current_player
                     )
                     trajectory['final_score'] = final_score
+                    
+                    # 更新可读状态中的最终得分
+                    if len(trajectory.get('readable_states', [])) > 0:
+                        trajectory['readable_states'][-1]['final_score'] = final_score
+                        trajectory['readable_states'][-1]['is_winner'] = True
                     
                     # 计算奖励（胡牌奖励）
                     reward = self.reward_shaping.compute_step_reward(
@@ -613,6 +644,66 @@ class SelfPlayWorker:
         
         # 如果打出的牌的花色索引等于定缺花色索引，说明打出了缺门牌
         return suit_index == declared_suit_index
+    
+    def _extract_readable_state(
+        self,
+        state,
+        current_player: int,
+        turn: int,
+    ) -> Dict[str, Any]:
+        """提取可读的游戏状态信息（用于回放）
+        
+        参数：
+        - state: 游戏状态
+        - current_player: 当前玩家ID
+        - turn: 当前回合数
+        
+        返回：
+        - 包含可读游戏状态的字典
+        """
+        readable_state = {
+            'current_player': current_player,
+            'turn': turn,
+            'players': [],
+        }
+        
+        try:
+            # 获取每个玩家的信息
+            for player_id in range(4):
+                player_info = {
+                    'player_id': player_id,
+                    'hand': {},
+                    'declared_suit': None,
+                    'is_ready': False,
+                }
+                
+                # 获取手牌
+                try:
+                    hand = state.get_player_hand(player_id)
+                    if isinstance(hand, dict):
+                        player_info['hand'] = {str(k): int(v) for k, v in hand.items()}
+                except Exception:
+                    pass
+                
+                # 获取定缺花色
+                try:
+                    declared_suit = state.get_player_declared_suit(player_id)
+                    player_info['declared_suit'] = declared_suit
+                except Exception:
+                    pass
+                
+                # 获取听牌状态
+                try:
+                    player_info['is_ready'] = state.is_player_ready(player_id)
+                except Exception:
+                    pass
+                
+                readable_state['players'].append(player_info)
+                
+        except Exception as e:
+            readable_state['error'] = str(e)
+        
+        return readable_state
     
     def _check_flower_pig(
         self,
