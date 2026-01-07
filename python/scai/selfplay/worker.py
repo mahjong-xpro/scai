@@ -332,11 +332,14 @@ class SelfPlayWorker:
                 value_np = value.cpu().numpy()[0, 0]
             
             # 记录轨迹（在动作执行前）
+            # 确保 action_mask 是 numpy 数组（get_action_mask 返回的是 Python 列表）
+            action_mask_array = np.array(action_mask, dtype=np.float32)
+            
             trajectory['states'].append(state_tensor)
             trajectory['actions'].append(int(action_index))
             trajectory['values'].append(float(value_np))
             trajectory['log_probs'].append(float(log_prob))
-            trajectory['action_masks'].append(action_mask)
+            trajectory['action_masks'].append(action_mask_array)
             trajectory['dones'].append(False)
             
             # 将动作索引转换为动作类型和参数

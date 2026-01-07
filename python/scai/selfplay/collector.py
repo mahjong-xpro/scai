@@ -294,6 +294,16 @@ class DataCollector:
                 for error_type, count in validation_stats['top_errors']:
                     percentage = (count / len(validation_stats['errors'])) * 100 if validation_stats['errors'] else 0
                     print(f"  - {error_type}: {count} occurrences ({percentage:.1f}%)")
+                
+                # 显示一些示例错误消息（前3个不同的错误）
+                if validation_stats['errors']:
+                    print(f"\nSample error messages (first 3 unique):")
+                    seen_errors = set()
+                    for error in validation_stats['errors']:
+                        if error not in seen_errors and len(seen_errors) < 3:
+                            print(f"  - {error}")
+                            seen_errors.add(error)
+                
                 print(f"{'='*60}\n")
         
         return result

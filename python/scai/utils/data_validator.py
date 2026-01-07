@@ -388,8 +388,22 @@ class DataValidator:
         # 统计最常见的错误类型
         error_types = {}
         for error in self.validation_stats['errors']:
-            # 提取错误类型（错误消息的前几个词）
-            error_type = error.split(':')[0] if ':' in error else error[:50]
+            # 提取错误类型（跳过 "Step X: " 前缀，提取实际的错误描述）
+            if ':' in error:
+                # 格式通常是 "Step X: Error description"
+                parts = error.split(':', 1)
+                if len(parts) == 2:
+                    # 提取冒号后面的错误描述，并取前50个字符
+                    error_type = parts[1].strip()[:50]
+                else:
+                    error_type = error[:50]
+            else:
+                error_type = error[:50]
+            
+            # 如果错误类型为空，使用完整错误消息
+            if not error_type:
+                error_type = error[:50]
+            
             error_types[error_type] = error_types.get(error_type, 0) + 1
         
         # 获取最常见的5个错误类型
