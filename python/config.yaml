@@ -5,16 +5,17 @@
 # 如需使用其他配置，请参考 config_4x4090.yaml 或修改相应参数
 
 # 模型配置
+# 详细架构说明请参考: docs/architecture/MODEL_ARCHITECTURE.md
 model:
-  input_channels: 64          # 特征平面数
+  input_channels: 64          # 特征平面数（输入通道数，编码游戏状态的64个特征平面）
   action_space_size: 434       # 动作空间大小（108 出牌 + 108 碰 + 108 杠 + 108 胡 + 1 过 + 1 摸）
   backbone:
-    num_blocks: 20             # ResNet 残差块数量
-    channels: 128              # 基础通道数
+    num_blocks: 20             # ResNet 残差块数量（用于提取深层特征）
+    channels: 128              # 基础通道数（初始特征图深度，会随网络加深逐步增加到512）
   policy_head:
-    hidden_size: 512          # Policy Head 隐藏层大小
+    hidden_size: 512          # Policy Head 隐藏层大小（输入特征维度，用于输出动作概率分布）
   value_head:
-    hidden_size: 256          # Value Head 隐藏层大小
+    hidden_size: 256          # Value Head 隐藏层大小（隐藏层维度，用于输出期望收益分数）
 
 # 训练配置
 training:
