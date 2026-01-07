@@ -253,7 +253,15 @@ class SelfPlayWorker:
             # 检查玩家是否已离场
             if state.is_player_out(current_player):
                 # 跳过已离场的玩家
-                # 注意：需要切换到下一个玩家，但 PyGameEngine 可能没有 next_turn() 方法
+                # 检查游戏是否结束（3家离场或流局）
+                if engine.is_game_over():
+                    break
+                # 否则继续循环，依赖引擎的current_player自动切换
+                # 或者手动查找下一个未离场玩家（如果引擎不自动切换）
+                # 注意：这里假设引擎会在某个时刻自动切换current_player
+                # 如果引擎不自动切换，可能会导致无限循环
+                # 但根据Rust代码，run()方法会自动处理，而我们使用的是process_action
+                # 所以需要依赖引擎的某种机制来切换玩家
                 continue
             
             # 先摸牌（如果是自己的回合）
@@ -294,6 +302,20 @@ class SelfPlayWorker:
                     break
                 print(f"Worker {self.worker_id}, Game {game_id}, Turn {turn_count}, Draw error: {e}")
                 # 如果摸牌失败，可能是游戏结束
+                break
+            
+            # 摸牌后，重新获取游戏状态（因为摸牌会更新状态）
+            try:
+                state = engine.state
+                current_player = state.current_player
+            except Exception as e:
+                error_str = str(e)
+                if "Game state validation failed" in error_str or "InvalidState" in error_str:
+                    # 状态验证失败，尝试继续
+                    if engine.remaining_tiles() == 0:
+                        break
+                    continue
+                print(f"Worker {self.worker_id}, Game {game_id}, Turn {turn_count}, Failed to get state after draw: {e}")
                 break
             
             # 获取游戏状态张量
@@ -392,15 +414,15 @@ class SelfPlayWorker:
             
             # 保存可读的游戏状态信息（用于回放）
             # 注意：这里保存的是动作执行前的状态，弃牌会在动作执行后更新
+            # 保存当前回合数（动作执行前），用于后续记录弃牌
+            game_turn_before_action = state.turn
             try:
-                # 使用state.turn作为游戏回合数（更准确）
-                game_turn = state.turn
-                readable_state = self._extract_readable_state(state, engine, current_player, game_turn)
-                # 添加弃牌信息（只显示到当前回合的弃牌）
+                readable_state = self._extract_readable_state(state, engine, current_player, game_turn_before_action)
+                # 添加弃牌信息（只显示到当前回合之前的弃牌，不包含当前回合）
                 for i, player_info in enumerate(readable_state.get('players', [])):
-                    # 收集该玩家在当前回合及之前的所有弃牌
+                    # 收集该玩家在当前回合之前的所有弃牌（不包含当前回合，因为动作还没执行）
                     discards_for_player = []
-                    for turn in range(game_turn + 1):  # 包含当前回合
+                    for turn in range(game_turn_before_action):  # 不包含当前回合
                         if turn in player_discards_by_turn[i]:
                             discards_for_player.extend(player_discards_by_turn[i][turn])
                     player_info['discards'] = [self._tile_index_to_name(idx) for idx in discards_for_player]
@@ -458,19 +480,11 @@ class SelfPlayWorker:
                 
                 # 如果动作是出牌，记录弃牌（动作执行后）
                 if action_type == "discard" and tile_index is not None:
-                    # 获取当前游戏回合数
-                    try:
-                        updated_state = engine.state
-                        game_turn = updated_state.turn
-                        # 按回合记录弃牌
-                        if game_turn not in player_discards_by_turn[current_player]:
-                            player_discards_by_turn[current_player][game_turn] = []
-                        player_discards_by_turn[current_player][game_turn].append(tile_index)
-                    except Exception:
-                        # 如果获取状态失败，使用turn_count作为fallback
-                        if turn_count not in player_discards_by_turn[current_player]:
-                            player_discards_by_turn[current_player][turn_count] = []
-                        player_discards_by_turn[current_player][turn_count].append(tile_index)
+                    # 使用动作执行前的回合数记录弃牌（确保与保存的状态一致）
+                    # 注意：弃牌是在当前回合发生的，所以使用game_turn_before_action
+                    if game_turn_before_action not in player_discards_by_turn[current_player]:
+                        player_discards_by_turn[current_player][game_turn_before_action] = []
+                    player_discards_by_turn[current_player][game_turn_before_action].append(tile_index)
                 
                 # 更新状态以获取最新信息（用于奖励计算）
                 try:
@@ -483,14 +497,17 @@ class SelfPlayWorker:
                     if len(trajectory.get('readable_states', [])) > 0:
                         last_readable_state = trajectory['readable_states'][-1]
                         # 重新提取状态以获取最新的副牌信息
-                        updated_state = self._extract_readable_state(state, engine, current_player, game_turn)
+                        # 使用动作执行后的回合数（可能已经更新）
+                        game_turn_after_action = state.turn
+                        updated_state = self._extract_readable_state(state, engine, current_player, game_turn_after_action)
                         # 更新副牌和弃牌信息
                         for i, player in enumerate(updated_state.get('players', [])):
                             if i < len(last_readable_state.get('players', [])):
                                 last_readable_state['players'][i]['melds'] = player.get('melds', [])
-                                # 更新弃牌信息（只显示到当前回合的弃牌）
+                                # 更新弃牌信息（显示到当前回合的弃牌，包含刚执行的弃牌）
                                 discards_for_player = []
-                                for turn in range(game_turn + 1):  # 包含当前回合
+                                # 使用动作执行后的回合数，包含当前回合
+                                for turn in range(game_turn_after_action + 1):  # 包含当前回合
                                     if turn in player_discards_by_turn[i]:
                                         discards_for_player.extend(player_discards_by_turn[i][turn])
                                 last_readable_state['players'][i]['discards'] = [self._tile_index_to_name(idx) for idx in discards_for_player]
