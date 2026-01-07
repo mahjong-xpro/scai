@@ -1,15 +1,13 @@
-# 血战到底 AI 训练配置文件
+# 血战到底 AI 训练配置文件（4x4090 优化版）
 # Training Configuration for Blood Battle to the End Mahjong AI
-# 
-# 注意：本配置已针对 4x4090 GPU 和 0基础数据 进行优化
-# 如需使用其他配置，请参考 config_4x4090.yaml 或修改相应参数
+# Optimized for 4x NVIDIA RTX 4090 (24GB each, 96GB total)
 
 # 模型配置
 model:
   input_channels: 64          # 特征平面数
   action_space_size: 434       # 动作空间大小（108 出牌 + 108 碰 + 108 杠 + 108 胡 + 1 过 + 1 摸）
   backbone:
-    num_blocks: 20             # ResNet 残差块数量
+    num_blocks: 20             # ResNet 残差块数量（4090显存充足，保持20层）
     channels: 128              # 基础通道数
   policy_head:
     hidden_size: 512          # Policy Head 隐藏层大小
@@ -18,31 +16,31 @@ model:
 
 # 训练配置
 training:
-  learning_rate: 3e-4          # 学习率
-  batch_size: 8192             # 批次大小（4090显存充足，增大到8192）
-  num_epochs: 10               # 每次更新的轮数
+  learning_rate: 3e-4          # 学习率（初期保持较高，有利于快速学习）
+  batch_size: 8192             # 批次大小（4090显存充足，增大到8192以提高训练效率）
+  num_epochs: 10               # 每次更新的轮数（保持10轮，充分利用数据）
   clip_epsilon: 0.2            # PPO 裁剪参数
   value_coef: 0.5              # 价值损失系数
-  entropy_coef: 0.01          # 熵系数（鼓励探索，课程学习会动态调整）
+  entropy_coef: 0.01          # 熵系数（初期鼓励探索，课程学习会动态调整）
   max_grad_norm: 0.5           # 梯度裁剪阈值
-  buffer_capacity: 200000     # 经验回放缓冲区容量（增大以存储更多经验）
+  buffer_capacity: 200000     # 经验回放缓冲区容量（增大以存储更多经验，4090内存充足）
   num_iterations: 5000         # 训练迭代次数（0基础需要更多迭代）
-  collect_interval: 1          # 每 N 次迭代收集一次数据
-  save_interval: 50            # 每 N 次迭代保存一次 Checkpoint（更频繁保存）
+  collect_interval: 1          # 每 N 次迭代收集一次数据（每次迭代都收集，保证数据新鲜）
+  save_interval: 50            # 每 N 次迭代保存一次 Checkpoint（更频繁保存，防止意外中断）
   
-  # 奖励函数配置
-  ready_reward: 0.1            # 听牌奖励
-  hu_reward: 1.0               # 胡牌奖励
-  flower_pig_penalty: -5.0     # 花猪惩罚
+  # 奖励函数配置（基础参数，课程学习会动态调整）
+  ready_reward: 0.1            # 听牌奖励（基础值）
+  hu_reward: 1.0               # 胡牌奖励（基础值）
+  flower_pig_penalty: -5.0     # 花猪惩罚（基础值）
   final_score_weight: 1.0      # 最终得分权重
 
 # 自对弈配置
 selfplay:
-  num_workers: 40              # Ray Worker 数量（4卡4090，可以支持更多worker）
+  num_workers: 40              # Ray Worker 数量（4卡4090，可以支持更多worker，提高数据收集速度）
   games_per_worker: 50         # 每个 Worker 运行的游戏数量（降低单worker游戏数，提高并行度）
-  oracle_enabled: true         # 是否启用 Oracle 特征（训练时使用）
-  validate_data: true          # 是否验证轨迹数据
-  strict_validation: false     # 严格验证模式（true: 发现错误时抛出异常，false: 只警告）
+  oracle_enabled: true         # 是否启用 Oracle 特征（训练时使用，帮助学习）
+  validate_data: true          # 是否验证轨迹数据（0基础需要严格验证）
+  strict_validation: false     # 严格验证模式（false: 只警告不中断，避免训练中断）
 
 # 评估配置
 evaluation:
@@ -53,16 +51,15 @@ evaluation:
 # GPU 配置
 gpu:
   enabled: true                 # 是否启用 GPU
-  device_ids: [0, 1, 2, 3]     # 使用的 GPU 设备 ID（8 卡服务器，使用前 4 张：0,1,2,3）
-  # 注意：如果设置 device_ids，会自动设置 CUDA_VISIBLE_DEVICES 环境变量
-  # 例如：[0, 1, 2, 3] 表示只使用前 4 张 GPU，Ray 和 PyTorch 只能看到这 4 张卡
+  device_ids: [0, 1, 2, 3]     # 使用全部4张4090 GPU
+  # 注意：4090每张24GB显存，总共96GB，足够支持大批次训练
 
 # Ray 配置
 ray:
   init: true                    # 是否初始化 Ray
   num_cpus: null               # CPU 数量（null 表示自动检测）
-  num_gpus: null               # GPU 数量（null 表示自动检测，会根据 gpu.device_ids 自动计算）
-  # 注意：如果设置了 gpu.device_ids，num_gpus 会自动设置为 len(device_ids)
+  num_gpus: 4                  # GPU 数量（明确指定4张，避免自动检测问题）
+  # 注意：4090显存充足，Ray workers可以在CPU上运行，GPU主要用于模型训练
 
 # Checkpoint 配置
 checkpoint_dir: ./checkpoints  # Checkpoint 保存目录
@@ -70,26 +67,26 @@ checkpoint_dir: ./checkpoints  # Checkpoint 保存目录
 # 日志配置
 logging:
   log_dir: ./logs              # 日志文件保存目录
-  log_level: INFO              # 日志级别（DEBUG, INFO, WARNING, ERROR, CRITICAL）
-  use_json: false              # 是否使用 JSON 格式（false 使用文本格式）
+  log_level: INFO              # 日志级别（INFO级别，平衡信息量和性能）
+  use_json: false              # 是否使用 JSON 格式（false 使用文本格式，更易读）
   console_output: true         # 是否输出到控制台
-  metrics_logging: true        # 是否记录训练指标
+  metrics_logging: true        # 是否记录训练指标（记录详细指标，便于分析）
 
 # 可选：对抗训练配置
 adversarial:
-  enabled: false                # 是否启用对抗训练
+  enabled: false                # 是否启用对抗训练（初期不启用，后期可开启）
   frequency: 10                 # 每 N 次迭代进行一次对抗训练
   scenarios_per_iteration: 5    # 每次对抗训练的 scenario 数量
 
 # 可选：超参数搜索配置
 hyperparameter_search:
-  enabled: false                # 是否启用超参数搜索
+  enabled: false                # 是否启用超参数搜索（0基础先固定参数）
   method: grid                  # 搜索方法（grid/random/bayesian）
   num_trials: 20                # 试验次数
 
 # 对手池配置
 opponent_pool:
-  enabled: false                # 是否启用对手池
+  enabled: false                # 是否启用对手池（初期不启用，后期可开启）
   pool_size: 10                 # 池大小
   selection_strategy: uniform   # 选择策略（uniform/weighted_by_elo/recent/diverse）
   update_interval: 100          # 每 N 次迭代更新一次
@@ -98,12 +95,12 @@ opponent_pool:
 curriculum_learning:
   enabled: true                 # ✅ 必须启用课程学习（解决0基础数据问题）
   initial_stage: declare_suit   # 初始阶段：从定缺阶段开始（最基础）
-  llm_coach_frequency: 100      # 每 N 次迭代生成一次课程规划文档
+  llm_coach_frequency: 100      # 每 N 次迭代生成一次课程规划文档（定期分析训练进度）
   document_output_dir: ./coach_documents  # 文档输出目录
   
   # Web 仪表板配置
   dashboard:
-    enabled: true               # 是否启用 Web 仪表板
+    enabled: true               # 是否启用 Web 仪表板（可视化训练进度）
     host: 0.0.0.0              # 监听地址（0.0.0.0 表示所有网络接口）
     port: 5000                 # 监听端口
   
@@ -113,13 +110,13 @@ curriculum_learning:
     difficulty: easy           # 难度级别（easy: 简单喂牌，帮助学习基本胡牌）
     feeding_rate: 0.2          # 喂牌概率（20%喂牌，80%随机，平衡学习和真实对局）
     win_types:                 # 要学习的胡牌类型
-      - basic                  # 基本胡牌
-      - seven_pairs            # 七对
-      - pure_suit              # 清一色
+      - basic                  # 基本胡牌（平胡）
+      - seven_pairs            # 七对（常见牌型）
+      - pure_suit              # 清一色（高级牌型，后期学习）
 
 # 搜索增强推理配置
 search_enhanced_inference:
-  enabled: false                # 是否启用搜索增强推理
+  enabled: false                # 是否启用搜索增强推理（初期不启用，后期可开启）
   num_simulations: 100          # ISMCTS 模拟次数
   exploration_constant: 1.41    # 探索常数（UCT）
   determinization_samples: 10   # Determinization 采样次数
@@ -127,7 +124,7 @@ search_enhanced_inference:
 
 # 数据增强配置
 data_augmentation:
-  enabled: false                # 是否启用数据增强
+  enabled: false                # 是否启用数据增强（初期不启用，避免干扰学习）
   suit_symmetry: true           # 花色对称性
   rank_symmetry: true           # 数字对称性
   position_rotation: true       # 玩家位置旋转
@@ -135,7 +132,7 @@ data_augmentation:
   symmetry_prob: 0.5            # 对称性概率
 
 # ============================================================================
-# 配置说明（4x4090 优化版）
+# 配置说明
 # ============================================================================
 # 
 # 1. 硬件资源优化：
@@ -155,18 +152,21 @@ data_augmentation:
 #    - 收集间隔：1（每次迭代都收集，保证数据新鲜）
 #    - 保存间隔：50（更频繁保存，防止意外中断）
 #
-# 4. 预期训练流程：
+# 4. 监控和调试：
+#    - Web仪表板：启用，可视化训练进度
+#    - 评估间隔：50（更频繁评估，及时了解训练效果）
+#    - 日志级别：INFO（平衡信息量和性能）
+#
+# 5. 预期训练流程：
 #    阶段1（定缺）：2000-8000次迭代，学习定缺和弃牌逻辑
 #    阶段2（学胡）：4000-12000次迭代，学习基本胡牌（喂牌模式）
 #    阶段3（价值）：8000-20000次迭代，学习高收益牌型
 #    后续阶段：根据训练进度自动推进
 #
-# 5. 注意事项：
+# 6. 注意事项：
 #    - 确保Ray正确初始化，能看到4张GPU
 #    - 监控GPU显存使用，确保不超过24GB/卡
 #    - 定期检查checkpoint，防止训练中断丢失进度
-#    - 关注Web仪表板（http://localhost:5000），及时了解训练状态
-#
-# 详细配置说明请参考：docs/troubleshooting/CONFIG_4X4090_GUIDE.md
+#    - 关注Web仪表板，及时了解训练状态
 #
 

@@ -48,14 +48,23 @@
 
 ### 4. 当前代码问题
 
-**问题 1：Worker 中的 RewardShaping 没有 reward_config**
+**问题 1：Worker 中的 RewardShaping 没有 reward_config** ✅ **已修复**
 
 ```python
-# worker.py 第 83 行
+# worker.py 第 83 行（修复前）
 self.reward_shaping = RewardShaping()  # 没有传入 reward_config
+
+# 修复后：已添加 reward_config 参数并传递
+self.reward_shaping = RewardShaping(reward_config=reward_config or {})
 ```
 
-**问题 2：奖励计算时没有传入向听数**
+**修复状态**：
+- ✅ `SelfPlayWorker.__init__` 已添加 `reward_config` 参数
+- ✅ `create_workers` 已添加 `reward_config` 参数并传递
+- ✅ `DataCollector.initialize_workers` 已从 `self.reward_shaping.reward_config` 获取配置
+- ✅ `DataCollector.collect` 已传递 `reward_config` 到 worker
+
+**问题 2：奖励计算时没有传入向听数** ⚠️ **待修复**
 
 ```python
 # worker.py 第 410-414 行
@@ -67,9 +76,11 @@ reward = self.reward_shaping.compute_step_reward(
 )
 ```
 
-**问题 3：游戏可能流局**
+**影响**：如果 `reward_config` 中配置了向听数奖励（`shanten_reward`），但未传入向听数参数，这些奖励不会被计算。
 
-如果游戏流局（没有玩家胡牌），所有奖励都是 0。
+**问题 3：游戏可能流局** ⚠️ **待确认**
+
+如果游戏流局（没有玩家胡牌），所有奖励都是 0。这是游戏逻辑问题，不是代码 bug。
 
 ## 诊断步骤
 
@@ -205,10 +216,23 @@ else:
 ## 检查清单
 
 - [ ] 检查游戏是否正常结束（有玩家胡牌）
-- [ ] 检查 `reward_config` 是否被正确传递到 worker
-- [ ] 检查 `compute_step_reward` 的输入参数
+- [x] 检查 `reward_config` 是否被正确传递到 worker ✅ **已修复**
+- [ ] 检查 `compute_step_reward` 的输入参数（缺少向听数）
 - [ ] 检查 `_extract_final_score_from_settlement` 是否正确提取得分
 - [ ] 添加调试日志，查看奖励计算的详细过程
+
+## 修复状态
+
+### ✅ 已修复
+1. **reward_config 传递问题**：已确保 Worker 使用与主进程相同的奖励配置
+
+### ⚠️ 待处理
+1. **向听数奖励**：需要实现向听数计算并传递到奖励函数
+2. **最终得分提取**：需要改进结算结果的解析逻辑（当前使用简单的正则表达式）
+3. **调试日志**：需要添加详细的调试日志以帮助诊断
+4. **游戏流局检查**：需要确认游戏流局的比例和原因
+
+详细状态请参考：`docs/troubleshooting/ALL_REWARDS_ZERO_STATUS.md`
 
 ## 总结
 
