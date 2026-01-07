@@ -672,10 +672,12 @@ def main():
                             if new_use_adversarial:
                                 logger.info("Adversarial training should be enabled for this stage")
                 
-                # 1. 收集数据（如果需要）
-                if (iteration + 1) % collect_interval == 0:
-                    logger.info("Collecting trajectories...")
-                    model_state_dict = model.state_dict()
+            # 1. 收集数据（如果需要）
+            if (iteration + 1) % collect_interval == 0:
+                logger.info("Collecting trajectories...")
+                # 确保模型状态字典在 CPU 上，以便 Ray workers 可以反序列化
+                # 即使 workers 没有 CUDA 也能正常工作
+                model_state_dict = {k: v.cpu() for k, v in model.state_dict().items()}
                     
                     # 根据课程学习阶段更新 collector 配置（如果启用）
                     if collector and curriculum is not None:

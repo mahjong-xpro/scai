@@ -591,7 +591,10 @@ class SelfPlayWorker:
             }
         
         model = DualResNet(**model_config)
+        # 确保 state_dict 在 CPU 上加载（即使原始模型在 CUDA 上）
+        # 这样可以避免 Ray 序列化/反序列化时的设备不匹配问题
         model.load_state_dict(model_state_dict)
+        # 加载后再移动到目标设备
         model.to(self.device)
         model.eval()
         

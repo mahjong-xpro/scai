@@ -92,12 +92,16 @@ class OpponentPool:
         model_id = f"iteration_{iteration}"
         
         # 创建对手模型
+        # 确保模型状态字典在 CPU 上，以便 Ray workers 可以反序列化
+        # 即使 workers 没有 CUDA 也能正常工作
+        model_state_dict_cpu = {k: v.cpu() for k, v in model.state_dict().items()}
+        
         opponent = OpponentModel(
             model_id=model_id,
             iteration=iteration,
             elo_rating=elo_rating,
             checkpoint_path=f"{self.checkpoint_dir}/checkpoint_iter_{iteration}.pt",
-            model_state_dict=model.state_dict(),
+            model_state_dict=model_state_dict_cpu,
             metadata=metadata or {},
         )
         
